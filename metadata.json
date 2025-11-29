@@ -1,0 +1,5 @@
+{
+  "name": "VibeCoder",
+  "description": "A split-screen live coding environment powered by Gemini 2.5 Flash. Chat on the left, live HTML/React preview on the right.",
+  "requestFramePermissions": []
+}
