@@ -32,6 +32,15 @@ export interface Skill {
   isEnabled: boolean;
 }
 
+export interface ProjectTemplate {
+  id: string;
+  name: string;
+  description: string;
+  prompt: string;
+  icon: string;
+  isCustom?: boolean;
+}
+
 export type StyleFramework = 'tailwind' | 'material-ui' | 'chakra-ui' | 'bootstrap';
 
 export type Theme = 'light' | 'dark';

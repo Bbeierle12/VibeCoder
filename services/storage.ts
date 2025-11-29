@@ -1,12 +1,13 @@
 
-import { User, ChatSession, Skill, Theme } from '../types';
-import { DEFAULT_TEST_CODE } from '../constants';
+import { User, ChatSession, Skill, Theme, ProjectTemplate } from '../types';
+import { DEFAULT_TEST_CODE, DEFAULT_PROJECT_TEMPLATES } from '../constants';
 
 const STORAGE_KEYS = {
   USER: 'vibecoder_user',
   SESSIONS: 'vibecoder_sessions',
   SKILLS: 'vibecoder_skills',
   THEME: 'vibecoder_theme',
+  TEMPLATES: 'vibecoder_templates'
 };
 
 const DEFAULT_SKILLS: Skill[] = [
@@ -104,5 +105,18 @@ export const storage = {
 
   saveTheme: (theme: Theme) => {
     localStorage.setItem(STORAGE_KEYS.THEME, theme);
+  },
+
+  getTemplates: (): ProjectTemplate[] => {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.TEMPLATES);
+      return data ? JSON.parse(data) : DEFAULT_PROJECT_TEMPLATES;
+    } catch (e) {
+      return DEFAULT_PROJECT_TEMPLATES;
+    }
+  },
+
+  saveTemplates: (templates: ProjectTemplate[]) => {
+    localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(templates));
   }
 };

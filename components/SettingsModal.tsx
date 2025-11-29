@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import { StyleFramework, Theme } from '../types';
 import { FRAMEWORKS } from '../constants';
@@ -93,10 +94,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         "text-sm mt-1 leading-relaxed",
                          currentFramework === key ? "text-md-sys-color-on-secondary-container opacity-80" : "text-md-sys-color-on-surface-variant"
                     )}>
-                       {key === 'tailwind' && "Utility-first CSS."}
-                       {key === 'material-ui' && "MUI v5 Components."}
-                       {key === 'chakra-ui' && "Chakra UI v2."}
-                       {key === 'bootstrap' && "Bootstrap 5."}
+                       {config.description}
                     </p>
                   </div>
                   {currentFramework === key && <CheckCircle2 size={24} />}

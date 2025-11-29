@@ -4,13 +4,14 @@ import {
   RefreshCw, Code, Maximize2, Minimize2, Undo2, Redo2, 
   Monitor, FileCode, Folder, ChevronRight, ChevronDown, ChevronUp,
   Settings, Image as ImageIcon, Box, FlaskConical, Play,
-  AlertCircle, CheckCircle2, XCircle, Copy, Check, X
+  AlertCircle, CheckCircle2, XCircle, Copy, Check, X, Cloud, Loader2
 } from 'lucide-react';
 import { Button } from './Button';
 import { CodeVersion } from '../types';
 import { clsx } from 'clsx';
 
 interface CodePreviewProps {
+  sessionId: string;
   code: string | null;
   testCode?: string;
   versions: CodeVersion[];
@@ -36,6 +37,7 @@ declare global {
 }
 
 export const CodePreview: React.FC<CodePreviewProps> = ({ 
+  sessionId,
   code, 
   testCode = '',
   versions, 
@@ -65,39 +67,100 @@ export const CodePreview: React.FC<CodePreviewProps> = ({
   // Copy State
   const [isCopied, setIsCopied] = useState(false);
 
-  // Auto-refresh preview iframe when code changes
+  // Cursor Tracking
+  const [currentLine, setCurrentLine] = useState(1);
+
+  // Autosave & Local State
+  const [localCode, setLocalCode] = useState(code || '');
+  const [isSaving, setIsSaving] = useState(false);
+  const lastSavedToParent = useRef(code || '');
+  const [debouncedCode, setDebouncedCode] = useState(code); // For Iframe preview
+
+  // Initialize & Sync with Props (and check for crash drafts)
   useEffect(() => {
-    if (viewMode === 'preview' && iframeRef.current && code) {
+    const draftKey = `vibecoder_draft_${sessionId}`;
+    const draft = localStorage.getItem(draftKey);
+    
+    // Logic: If we have a draft that is different from what we thought we had, assume crash recovery
+    // BUT we must prioritize prop updates if they are "newer" (like Undo/Redo or AI generation).
+    // The heuristic: If prop matches what we last saved to parent, then prop hasn't changed externally.
+    // If prop doesn't match lastSavedToParent, it's an external change (Undo/AI), so we accept it over draft.
+    
+    const isExternalChange = code !== lastSavedToParent.current;
+
+    if (isExternalChange) {
+        // External update (AI or Undo) takes precedence
+        setLocalCode(code || '');
+        lastSavedToParent.current = code || '';
+        // Clear draft as it's now obsolete/conflicting
+        localStorage.removeItem(draftKey);
+    } else if (draft && draft !== localCode) {
+        // No external change, but we found a draft (crash recovery)
+        setLocalCode(draft);
+    }
+    // Else: No external change, no draft (or draft matches). Keep localCode as is.
+  }, [code, sessionId]);
+
+  // Autosave / Debounce Effect
+  useEffect(() => {
+      // If local matches what we last sent, no save needed
+      if (localCode === lastSavedToParent.current) {
+          setIsSaving(false);
+          return;
+      }
+
+      setIsSaving(true);
+      const draftKey = `vibecoder_draft_${sessionId}`;
+      
+      // Immediate draft save (synchronous, cheap for text)
+      localStorage.setItem(draftKey, localCode); 
+      
+      // Debounce the heavy save to parent/persistent storage
+      const timer = setTimeout(() => {
+          onCodeChange(localCode);
+          lastSavedToParent.current = localCode;
+          localStorage.removeItem(draftKey); // Clear draft after successful handoff
+          setIsSaving(false);
+      }, 2000); // 2 seconds delay
+
+      // Sync preview slightly faster than save
+      const previewTimer = setTimeout(() => {
+          setDebouncedCode(localCode);
+      }, 1000);
+
+      return () => {
+          clearTimeout(timer);
+          clearTimeout(previewTimer);
+      };
+  }, [localCode, sessionId, onCodeChange]);
+
+  // Handle manual refresh of preview
+  useEffect(() => {
+    if (viewMode === 'preview' && iframeRef.current && debouncedCode) {
       const doc = iframeRef.current.contentDocument;
       if (doc) {
         doc.open();
-        doc.write(code);
+        doc.write(debouncedCode);
         doc.close();
       }
     }
-  }, [code, key, viewMode]);
+  }, [debouncedCode, key, viewMode]);
 
-  // Linting Logic
+  // Linting Logic (runs on localCode)
   useEffect(() => {
-    if (!code || viewMode !== 'code') return;
+    if (!localCode || viewMode !== 'code') return;
 
-    // Debounce validation slightly
     const timer = setTimeout(() => {
         if (window.Babel) {
             try {
-                // 1. Extract Script Content
-                // We look for <script type="text/babel"> or just <script> if it looks like React
                 const scriptRegex = /<script\s+type=["']text\/babel["']>([\s\S]*?)<\/script>/i;
-                const match = code.match(scriptRegex);
+                const match = localCode.match(scriptRegex);
                 
                 if (match) {
                     const scriptContent = match[1];
                     const index = match.index || 0;
+                    const linesBefore = localCode.substring(0, index).split('\n').length;
                     
-                    // Calculate start line of the script to map errors back to full HTML
-                    const linesBefore = code.substring(0, index).split('\n').length;
-                    
-                    // 2. Transpile using Babel
                     window.Babel.transform(scriptContent, {
                         presets: ['react', 'env'],
                         filename: 'file.js'
@@ -108,23 +171,17 @@ export const CodePreview: React.FC<CodePreviewProps> = ({
                     setLintErrors([]);
                 }
             } catch (err: any) {
-                // Babel throws errors with loc { line, column }
                 if (err.loc) {
-                    // We need to re-calculate the absolute line number
                     const scriptRegex = /<script\s+type=["']text\/babel["']>([\s\S]*?)<\/script>/i;
-                    const match = code.match(scriptRegex);
-                    const linesBefore = match ? code.substring(0, match.index || 0).split('\n').length : 0;
-                    
+                    const match = localCode.match(scriptRegex);
+                    const linesBefore = match ? localCode.substring(0, match.index || 0).split('\n').length : 0;
                     const errorLine = linesBefore + err.loc.line - 1;
                     
                     setLintErrors([{
                         id: `err-${Date.now()}`,
                         line: errorLine, 
-                        message: err.message.replace(/\s*\(\d+:\d+\)$/, '') // Remove (line:col) suffix
+                        message: err.message.replace(/\s*\(\d+:\d+\)$/, '')
                     }]);
-                    
-                    // Auto-open panel if strictly coding
-                    // setIsProblemsOpen(true); 
                 } else {
                     setLintErrors([]);
                 }
@@ -133,18 +190,27 @@ export const CodePreview: React.FC<CodePreviewProps> = ({
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [code, viewMode]);
+  }, [localCode, viewMode]);
 
-  // Run tests by injecting code + mocha + test code into a separate iframe
+  const updateCurrentLine = useCallback(() => {
+    if (textareaRef.current) {
+        const { value, selectionStart } = textareaRef.current;
+        if (value && selectionStart !== null) {
+            const line = value.substring(0, selectionStart).split('\n').length;
+            setCurrentLine(line);
+        } else {
+            setCurrentLine(1);
+        }
+    }
+  }, []);
+
   const runTests = useCallback(() => {
-    if (!testIframeRef.current || !code) return;
+    if (!testIframeRef.current || !localCode) return;
     
-    // Construct the test harness HTML
     const doc = testIframeRef.current.contentDocument;
     if (doc) {
-      let testHarnessHTML = code;
+      let testHarnessHTML = localCode;
 
-      // Inject Mocha CSS and JS into Head
       const headInjection = `
         <link href="https://unpkg.com/mocha/mocha.css" rel="stylesheet" />
         <script src="https://unpkg.com/chai/chai.js"></script>
@@ -155,7 +221,6 @@ export const CodePreview: React.FC<CodePreviewProps> = ({
         </style>
       `;
 
-      // Inject Mocha Setup, User Test Code, and Run command at the end of Body
       const bodyInjection = `
         <div id="mocha"></div>
         <script>
@@ -188,7 +253,7 @@ export const CodePreview: React.FC<CodePreviewProps> = ({
       doc.write(testHarnessHTML);
       doc.close();
     }
-  }, [code, testCode]);
+  }, [localCode, testCode]);
 
   useEffect(() => {
     if (shouldRunTests && viewMode === 'tests') {
@@ -203,7 +268,7 @@ export const CodePreview: React.FC<CodePreviewProps> = ({
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!code) return;
+      if (!localCode) return;
       const isInputActive = document.activeElement?.tagName === 'INPUT' || 
                            (document.activeElement?.tagName === 'TEXTAREA' && !document.activeElement.closest('.code-editor')); 
 
@@ -236,9 +301,10 @@ export const CodePreview: React.FC<CodePreviewProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [code, onUndo, onRedo]);
+  }, [localCode, onUndo, onRedo]);
 
   const handleRefresh = () => {
+    setDebouncedCode(localCode); 
     setKey(prev => prev + 1);
   };
 
@@ -254,17 +320,17 @@ export const CodePreview: React.FC<CodePreviewProps> = ({
 
   const scrollToLine = (line: number) => {
     if (textareaRef.current) {
-        // Line height is 1.5rem (24px) for text-sm leading-6
         const lineHeight = 24; 
         const top = (line - 1) * lineHeight;
         textareaRef.current.scrollTo({ top, behavior: 'smooth' });
+        setCurrentLine(line);
     }
   };
 
   const handleCopy = async () => {
-    if (!code) return;
+    if (!localCode) return;
     try {
-        await navigator.clipboard.writeText(code);
+        await navigator.clipboard.writeText(localCode);
         setIsCopied(true);
         setTimeout(() => setIsCopied(false), 2000);
     } catch (err) {
@@ -275,10 +341,10 @@ export const CodePreview: React.FC<CodePreviewProps> = ({
   const canUndo = currentVersionIndex > 0;
   const canRedo = currentVersionIndex < versions.length - 1;
 
-  const lineCount = useMemo(() => code ? code.split('\n').length : 0, [code]);
+  const lineCount = useMemo(() => localCode ? localCode.split('\n').length : 0, [localCode]);
   const lines = useMemo(() => Array.from({ length: lineCount }, (_, i) => i + 1), [lineCount]);
 
-  if (!code) {
+  if (!localCode && !code) {
     return (
       <div className="h-full flex flex-col items-center justify-center bg-md-sys-color-surface-container text-md-sys-color-on-surface-variant rounded-tl-[24px] rounded-bl-[24px] border border-md-sys-color-outline-variant/20 m-2 ml-0">
         <div className="bg-md-sys-color-surface-container-high p-6 rounded-full mb-4">
@@ -350,6 +416,21 @@ export const CodePreview: React.FC<CodePreviewProps> = ({
                 <Button variant="icon" size="sm" onClick={onRedo} disabled={!canRedo} title="Redo (Ctrl + Shift + Z)">
                     <Redo2 size={18} />
                 </Button>
+            </div>
+
+            {/* Autosave Status Indicator */}
+            <div className="flex items-center gap-1.5 ml-2 px-2 py-1 rounded bg-black/20 text-[10px] font-medium text-md-sys-color-on-surface-variant/80">
+                {isSaving ? (
+                    <>
+                        <Loader2 size={10} className="animate-spin" />
+                        <span>Saving...</span>
+                    </>
+                ) : (
+                    <>
+                        <Cloud size={10} />
+                        <span>Saved</span>
+                    </>
+                )}
             </div>
         </div>
 
@@ -445,14 +526,20 @@ export const CodePreview: React.FC<CodePreviewProps> = ({
                         >
                             {lines.map(lineNum => {
                                 const error = lintErrors.find(e => e.line === lineNum);
+                                const isCurrent = currentLine === lineNum;
                                 return (
-                                    <div key={lineNum} className="relative pr-3 h-6 leading-6 text-xs flex items-center justify-end group">
+                                    <div key={lineNum} className={clsx(
+                                        "relative pr-3 h-6 leading-6 text-xs flex items-center justify-end group transition-colors",
+                                        error ? "bg-red-900/30" : (isCurrent ? "bg-[#2c2c2c]" : "")
+                                    )}>
                                         {error && (
-                                            <div title={error.message} className="absolute left-1 cursor-help">
+                                            <div title={error.message} className="absolute left-1 cursor-help z-10">
                                                 <XCircle size={10} className="text-red-500" />
                                             </div>
                                         )}
-                                        <span className={clsx(error ? "text-red-400 font-bold" : "")}>{lineNum}</span>
+                                        <span className={clsx(
+                                            error ? "text-red-400 font-bold" : (isCurrent ? "text-md-sys-color-primary font-bold" : "")
+                                        )}>{lineNum}</span>
                                     </div>
                                 );
                             })}
@@ -462,9 +549,12 @@ export const CodePreview: React.FC<CodePreviewProps> = ({
                         <textarea
                             ref={textareaRef}
                             className="flex-1 h-full p-4 pl-2 bg-transparent text-inherit font-inherit resize-none focus:outline-none custom-scrollbar leading-6 whitespace-pre"
-                            value={code || ''}
-                            onChange={(e) => onCodeChange(e.target.value)}
+                            value={localCode}
+                            onChange={(e) => setLocalCode(e.target.value)}
                             onScroll={handleScroll}
+                            onSelect={updateCurrentLine}
+                            onClick={updateCurrentLine}
+                            onKeyUp={updateCurrentLine}
                             spellCheck={false}
                             autoCapitalize="off"
                             autoComplete="off"
@@ -530,6 +620,7 @@ export const CodePreview: React.FC<CodePreviewProps> = ({
                             )}
                         </div>
                         <div className="flex items-center gap-4 opacity-70">
+                            <span>Ln {currentLine}</span>
                             <span>{isProblemsOpen ? <ChevronDown size={12} /> : <ChevronUp size={12} />}</span>
                         </div>
                     </div>

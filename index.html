@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -11,51 +12,64 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
       :root {
-        /* Light Theme (Default) */
+        /* Light Theme (Preserved clean look) */
         --md-sys-color-background: #FEF7FF;
         --md-sys-color-on-background: #1D1B20;
-        --md-sys-color-surface: #FEF7FF;
-        --md-sys-color-surface-container-low: #F7F2FA;
-        --md-sys-color-surface-container: #F3EDF7;
-        --md-sys-color-surface-container-high: #ECE6F0;
-        --md-sys-color-on-surface: #1D1B20;
-        --md-sys-color-on-surface-variant: #49454F;
-        --md-sys-color-outline: #79747E;
-        --md-sys-color-outline-variant: #CAC4D0;
-        --md-sys-color-primary: #65558F;
+        --md-sys-color-surface: #F9F9FC;
+        --md-sys-color-surface-container-low: #F3F3F8;
+        --md-sys-color-surface-container: #EDEDF4;
+        --md-sys-color-surface-container-high: #E7E7EE;
+        --md-sys-color-on-surface: #1A1C1E;
+        --md-sys-color-on-surface-variant: #44474E;
+        --md-sys-color-outline: #74777F;
+        --md-sys-color-outline-variant: #C4C6D0;
+        --md-sys-color-primary: #006684;
         --md-sys-color-on-primary: #FFFFFF;
-        --md-sys-color-primary-container: #EADDFF;
-        --md-sys-color-on-primary-container: #21005D;
-        --md-sys-color-secondary: #625B71;
+        --md-sys-color-primary-container: #BEE9FF;
+        --md-sys-color-on-primary-container: #001F2A;
+        --md-sys-color-secondary: #4D616C;
         --md-sys-color-on-secondary: #FFFFFF;
-        --md-sys-color-secondary-container: #E8DEF8;
-        --md-sys-color-on-secondary-container: #1D192B;
-        --md-sys-color-error: #B3261E;
+        --md-sys-color-secondary-container: #D0E6F2;
+        --md-sys-color-on-secondary-container: #081E27;
+        --md-sys-color-error: #BA1A1A;
         --md-sys-color-on-error: #FFFFFF;
       }
 
       body.dark {
-        /* Dark Theme */
-        --md-sys-color-background: #141218;
-        --md-sys-color-on-background: #E6E0E9;
-        --md-sys-color-surface: #141218;
-        --md-sys-color-surface-container-low: #1D1B20;
-        --md-sys-color-surface-container: #211F26;
-        --md-sys-color-surface-container-high: #2B2930;
-        --md-sys-color-on-surface: #E6E0E9;
-        --md-sys-color-on-surface-variant: #CAC4D0;
-        --md-sys-color-outline: #938F99;
-        --md-sys-color-outline-variant: #49454F;
-        --md-sys-color-primary: #D0BCFF;
-        --md-sys-color-on-primary: #381E72;
-        --md-sys-color-primary-container: #4F378B;
-        --md-sys-color-on-primary-container: #EADDFF;
-        --md-sys-color-secondary: #CCC2DC;
-        --md-sys-color-on-secondary: #332D41;
-        --md-sys-color-secondary-container: #4A4458;
-        --md-sys-color-on-secondary-container: #E8DEF8;
-        --md-sys-color-error: #F2B8B5;
-        --md-sys-color-on-error: #601410;
+        /* VibeCoder Dark Theme (Cyberpunk/Neon) */
+        /* Background: Deep Black/Blue */
+        --md-sys-color-background: #050510;
+        --md-sys-color-on-background: #E2E8F0;
+        
+        /* Surfaces: Dark Navy gradients */
+        --md-sys-color-surface: #0A0A15;
+        --md-sys-color-surface-container-low: #10101E;
+        --md-sys-color-surface-container: #151525;
+        --md-sys-color-surface-container-high: #1D1D30;
+        
+        /* Text */
+        --md-sys-color-on-surface: #E0E0FF;
+        --md-sys-color-on-surface-variant: #94A3B8;
+        
+        /* Borders */
+        --md-sys-color-outline: #475569;
+        --md-sys-color-outline-variant: #2B2E42;
+        
+        /* Primary: Neon Cyan */
+        --md-sys-color-primary: #22D3EE;
+        --md-sys-color-on-primary: #000000;
+        --md-sys-color-primary-container: #083344;
+        --md-sys-color-on-primary-container: #A5F3FC;
+        
+        /* Secondary: Neon Purple */
+        --md-sys-color-secondary: #A855F7;
+        --md-sys-color-on-secondary: #FFFFFF;
+        --md-sys-color-secondary-container: #3B0764;
+        --md-sys-color-on-secondary-container: #E9D5FF;
+        
+        /* Error */
+        --md-sys-color-error: #FF5252;
+        --md-sys-color-on-error: #690005;
       }
 
       body {

@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Menu, Settings, BrainCircuit } from 'lucide-react';
-import { Message, Role, User, ChatSession, CodeVersion, StyleFramework, Skill, Theme } from './types';
+import { Message, Role, User, ChatSession, CodeVersion, StyleFramework, Skill, Theme, ProjectTemplate } from './types';
 import { sendMessageStream, initializeChat } from './services/geminiService';
 import { storage } from './services/storage';
 import { extractHtmlCode, generateId } from './utils/helpers';
@@ -12,8 +12,9 @@ import { AuthModal } from './components/AuthModal';
 import { HistorySidebar } from './components/HistorySidebar';
 import { SettingsModal } from './components/SettingsModal';
 import { SkillsModal } from './components/SkillsModal';
+import { TemplateSelectionModal } from './components/TemplateSelectionModal';
 import { Logo } from './components/Logo';
-import { DEFAULT_TEST_CODE } from './constants';
+import { DEFAULT_TEST_CODE, DEFAULT_PROJECT_TEMPLATES } from './constants';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -21,8 +22,10 @@ export default function App() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSkillsOpen, setIsSkillsOpen] = useState(false);
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
+  const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState('');
   const [isThinking, setIsThinking] = useState(false);
@@ -59,6 +62,52 @@ export default function App() {
       .join('\n\n');
   }, []);
 
+  const createNewSession = useCallback((templateId: string = 'blank', currentSkills = skills) => {
+    // Look up in dynamic templates, fallback to defaults just in case
+    const template = templates.find(t => t.id === templateId) || DEFAULT_PROJECT_TEMPLATES.find(t => t.id === templateId);
+    
+    // Initial messages based on template
+    const messages: Message[] = [];
+    
+    if (templateId === 'blank') {
+       messages.push({
+        id: generateId(),
+        role: Role.MODEL,
+        content: "I'm VibeCoder. What are we building?",
+        timestamp: Date.now(),
+      });
+    } else {
+       // For templates, we immediately inject the prompt as a user message
+       messages.push({
+         id: generateId(),
+         role: Role.USER,
+         content: template?.prompt || "",
+         timestamp: Date.now()
+       });
+    }
+
+    const newSession: ChatSession = {
+      id: generateId(),
+      title: templateId === 'blank' ? 'New Project' : template?.name || 'New Project',
+      messages: messages,
+      codeVersions: [],
+      currentVersionIndex: 0,
+      createdAt: Date.now(),
+      lastModified: Date.now(),
+      framework: 'tailwind',
+      testCode: DEFAULT_TEST_CODE
+    };
+
+    setSessions(prev => [newSession, ...prev]);
+    setActiveSessionId(newSession.id);
+    storage.saveSession(newSession);
+    initializeChat(newSession.framework, newSession.messages, getEnabledSkillsContext(currentSkills));
+    
+    if (window.innerWidth < 768) setIsHistoryOpen(false);
+    
+    return newSession;
+  }, [skills, templates, getEnabledSkillsContext]);
+
   useEffect(() => {
     const loadedUser = storage.getUser();
     if (loadedUser) setUser(loadedUser);
@@ -69,6 +118,9 @@ export default function App() {
     const loadedSkills = storage.getSkills();
     setSkills(loadedSkills);
 
+    const loadedTemplates = storage.getTemplates();
+    setTemplates(loadedTemplates);
+
     if (loadedSessions.length > 0) {
       setActiveSessionId(loadedSessions[0].id);
       initializeChat(
@@ -77,7 +129,13 @@ export default function App() {
         getEnabledSkillsContext(loadedSkills)
       );
     } else {
-      createNewSession(loadedSkills);
+      // Don't auto-create on load to avoid clutter, let user choose from template modal if they want
+      // But if we truly have nothing, maybe prompt? For now, leave empty state.
+      // Actually, let's select blank automatically if completely empty to show the UI
+      if (loadedSessions.length === 0) {
+          // We can't call createNewSession here easily because it depends on templates state which might update
+          // Just let the UI handle the empty state
+      }
     }
   }, [getEnabledSkillsContext]);
 
@@ -88,7 +146,6 @@ export default function App() {
   const currentCode = versions.length > 0 && versions[currentVersionIndex] ? versions[currentVersionIndex].code : null;
   const testCode = activeSession?.testCode || DEFAULT_TEST_CODE;
 
-  // Re-initialize chat when switching sessions
   useEffect(() => {
     if (activeSession) {
       initializeChat(
@@ -99,30 +156,6 @@ export default function App() {
       scrollToBottom();
     }
   }, [activeSessionId]);
-
-  const createNewSession = useCallback((currentSkills = skills) => {
-    const newSession: ChatSession = {
-      id: generateId(),
-      title: 'New Project',
-      messages: [{
-        id: generateId(),
-        role: Role.MODEL,
-        content: "I'm VibeCoder. What are we building?",
-        timestamp: Date.now(),
-      }],
-      codeVersions: [],
-      currentVersionIndex: 0,
-      createdAt: Date.now(),
-      lastModified: Date.now(),
-      framework: 'tailwind',
-      testCode: DEFAULT_TEST_CODE
-    };
-    setSessions(prev => [newSession, ...prev]);
-    setActiveSessionId(newSession.id);
-    storage.saveSession(newSession);
-    initializeChat(newSession.framework, newSession.messages, getEnabledSkillsContext(currentSkills));
-    if (window.innerWidth < 768) setIsHistoryOpen(false);
-  }, [skills, getEnabledSkillsContext]);
 
   const updateActiveSession = (updates: Partial<ChatSession>) => {
     if (!activeSessionId) return;
@@ -155,10 +188,14 @@ export default function App() {
   const handleSkillsSave = (newSkills: Skill[]) => {
     setSkills(newSkills);
     storage.saveSkills(newSkills);
-    // Re-initialize chat with new skills context if we have an active session
     if (activeSession) {
       initializeChat(activeSession.framework, activeSession.messages, getEnabledSkillsContext(newSkills));
     }
+  };
+  
+  const handleSaveTemplates = (newTemplates: ProjectTemplate[]) => {
+      setTemplates(newTemplates);
+      storage.saveTemplates(newTemplates);
   };
 
   const scrollToBottom = () => {
@@ -169,8 +206,111 @@ export default function App() {
     scrollToBottom();
   }, [messages, isThinking]);
 
-  const handleSendMessage = useCallback(async () => {
+  // Handle template selection
+  const handleTemplateSelect = (templateId: string) => {
+      setIsTemplateModalOpen(false);
+      const newSession = createNewSession(templateId);
+      
+      // If it's a template (not blank), trigger the generation automatically
+      if (templateId !== 'blank' && newSession) {
+          triggerModelGeneration(newSession.id, newSession.messages[0].content, newSession);
+      }
+  };
+
+  const triggerModelGeneration = async (sessionId: string, promptText: string, sessionObj?: ChatSession) => {
+      if (isThinking) return;
+      setIsThinking(true);
+      
+      let currentSession = sessionObj || sessions.find(s => s.id === sessionId);
+      if (!currentSession) return;
+
+      try {
+        const modelMessageId = generateId();
+        const initialModelMessage: Message = {
+            id: modelMessageId,
+            role: Role.MODEL,
+            content: '',
+            timestamp: Date.now(),
+        };
+
+        const updatedMessages = [...currentSession.messages, initialModelMessage];
+        
+        setSessions(prev => prev.map(session => {
+            if (session.id === sessionId) {
+                const updated = { ...session, messages: updatedMessages };
+                storage.saveSession(updated);
+                return updated;
+            }
+            return session;
+        }));
+
+        let accumulatedText = "";
+        
+        await sendMessageStream(promptText, (streamedText) => {
+            accumulatedText = streamedText;
+            setSessions(prev => prev.map(session => {
+            if (session.id === sessionId) {
+                const updatedMsgs = session.messages.map(msg => 
+                    msg.id === modelMessageId ? { ...msg, content: streamedText } : msg
+                );
+                return { ...session, messages: updatedMsgs };
+            }
+            return session;
+            }));
+        });
+
+        const extractedCode = extractHtmlCode(accumulatedText);
+        if (extractedCode) {
+            setSessions(prev => prev.map(session => {
+                if (session.id === sessionId) {
+                    const newVersion: CodeVersion = {
+                        id: generateId(),
+                        code: extractedCode,
+                        timestamp: Date.now()
+                    };
+                    const updatedSession = {
+                        ...session,
+                        messages: session.messages.map(msg => 
+                            msg.id === modelMessageId ? { ...msg, content: accumulatedText } : msg
+                        ),
+                        codeVersions: [...session.codeVersions, newVersion],
+                        currentVersionIndex: session.codeVersions.length
+                    };
+                    storage.saveSession(updatedSession);
+                    return updatedSession;
+                }
+                return session;
+            }));
+        } else {
+            setSessions(prev => {
+                const session = prev.find(s => s.id === sessionId);
+                if (session) storage.saveSession(session);
+                return prev;
+            });
+        }
+
+      } catch (error) {
+        console.error(error);
+        setSessions(prev => prev.map(session => {
+             if (session.id === sessionId) {
+                 const errMsg: Message = {
+                    id: generateId(),
+                    role: Role.MODEL,
+                    content: "I encountered an error generating the project. Please try again.",
+                    timestamp: Date.now()
+                 };
+                 return { ...session, messages: [...session.messages, errMsg] };
+             }
+             return session;
+        }));
+      } finally {
+        setIsThinking(false);
+      }
+  };
+
+  const handleSendMessage = async () => {
     if (!inputValue.trim() || isThinking || !activeSessionId) return;
+    
     const userMessage: Message = {
       id: generateId(),
       role: Role.USER,
@@ -178,86 +318,25 @@ export default function App() {
       timestamp: Date.now(),
     };
 
-    updateActiveSession({
-      messages: [...(activeSession?.messages || []), userMessage],
-      title: activeSession?.messages.length === 1 ? userMessage.content.slice(0, 30) : activeSession?.title
-    });
-    
     setInputValue('');
-    setIsThinking(true);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
 
-    try {
-      const modelMessageId = generateId();
-      const initialModelMessage: Message = {
-        id: modelMessageId,
-        role: Role.MODEL,
-        content: '',
-        timestamp: Date.now(),
-      };
+    setSessions(prev => prev.map(session => {
+        if (session.id === activeSessionId) {
+            const updatedMessages = [...session.messages, userMessage];
+            const updatedSession = { 
+                ...session, 
+                messages: updatedMessages,
+                title: session.messages.length <= 1 ? userMessage.content.slice(0, 30) : session.title
+            };
+            storage.saveSession(updatedSession);
+            return updatedSession;
+        }
+        return session;
+    }));
 
-      updateActiveSession({
-        messages: [...(activeSession?.messages || []), userMessage, initialModelMessage]
-      });
-
-      let accumulatedText = "";
-      
-      await sendMessageStream(userMessage.content, (streamedText) => {
-        accumulatedText = streamedText;
-        setSessions(prev => prev.map(session => {
-           if (session.id === activeSessionId) {
-             const updatedMessages = session.messages.map(msg => 
-               msg.id === modelMessageId ? { ...msg, content: streamedText } : msg
-             );
-             return { ...session, messages: updatedMessages };
-           }
-           return session;
-        }));
-      });
-
-      const extractedCode = extractHtmlCode(accumulatedText);
-      if (extractedCode) {
-         setSessions(prev => prev.map(session => {
-            if (session.id === activeSessionId) {
-               const newVersion: CodeVersion = {
-                 id: generateId(),
-                 code: extractedCode,
-                 timestamp: Date.now()
-               };
-               const updatedSession = {
-                 ...session,
-                 messages: session.messages.map(msg => 
-                    msg.id === modelMessageId ? { ...msg, content: accumulatedText } : msg
-                 ),
-                 codeVersions: [...session.codeVersions, newVersion],
-                 currentVersionIndex: session.codeVersions.length
-               };
-               storage.saveSession(updatedSession);
-               return updatedSession;
-            }
-            return session;
-         }));
-      } else {
-         setSessions(prev => {
-            const session = prev.find(s => s.id === activeSessionId);
-            if (session) storage.saveSession(session);
-            return prev;
-         });
-      }
-
-    } catch (error) {
-      updateActiveSession({
-        messages: [...(activeSession?.messages || []), {
-          id: generateId(),
-          role: Role.MODEL,
-          content: "I encountered an error. Please try again.",
-          timestamp: Date.now()
-        }]
-      });
-    } finally {
-      setIsThinking(false);
-    }
-  }, [inputValue, isThinking, activeSessionId, activeSession]);
+    await triggerModelGeneration(activeSessionId, userMessage.content);
+  };
 
   const handleUndo = () => {
     if (!activeSession || activeSession.currentVersionIndex <= 0) return;
@@ -299,7 +378,10 @@ export default function App() {
       setActiveSessionId(null);
       const remaining = sessions.filter(s => s.id !== id);
       if (remaining.length > 0) setActiveSessionId(remaining[0].id);
-      else createNewSession();
+      else {
+          // If deleted last session, maybe just clear active ID. 
+          // User can click new project.
+      }
     }
   };
 
@@ -331,11 +413,13 @@ export default function App() {
   return (
     <div className="flex h-screen w-full bg-md-sys-color-background text-md-sys-color-on-background overflow-hidden font-sans transition-colors duration-300">
       
+      <div className="fixed inset-0 cyber-grid pointer-events-none z-0 opacity-20"></div>
+
       <HistorySidebar 
         sessions={sessions}
         currentSessionId={activeSessionId}
         onSelectSession={(id) => { setActiveSessionId(id); if (window.innerWidth < 768) setIsHistoryOpen(false); }}
-        onNewChat={() => createNewSession(skills)}
+        onNewChat={() => setIsTemplateModalOpen(true)}
         onDeleteSession={handleDeleteSession}
         isOpen={isHistoryOpen}
         onClose={() => setIsHistoryOpen(false)}
@@ -357,16 +441,23 @@ export default function App() {
         onSaveSkills={handleSkillsSave}
       />
 
-      <div className="flex-1 flex flex-col h-full min-w-0 bg-md-sys-color-surface transition-colors duration-300">
-        {/* M3 Top App Bar */}
-        <header className="flex items-center justify-between px-4 h-16 bg-md-sys-color-surface text-md-sys-color-on-surface z-10 border-b border-md-sys-color-outline-variant/20 transition-colors duration-300">
+      <TemplateSelectionModal
+        isOpen={isTemplateModalOpen}
+        onClose={() => setIsTemplateModalOpen(false)}
+        onSelect={handleTemplateSelect}
+        templates={templates}
+        onSaveTemplates={handleSaveTemplates}
+      />
+
+      <div className="flex-1 flex flex-col h-full min-w-0 bg-md-sys-color-surface/80 backdrop-blur-sm transition-colors duration-300 z-10 relative">
+        <header className="flex items-center justify-between px-4 h-16 bg-md-sys-color-surface/90 backdrop-blur-md text-md-sys-color-on-surface z-20 border-b border-md-sys-color-outline-variant/30 transition-colors duration-300 shadow-sm">
           <div className="flex items-center gap-4">
             <Button variant="icon" onClick={() => setIsHistoryOpen(!isHistoryOpen)}>
               <Menu size={24} />
             </Button>
             <div className="flex items-center gap-3">
                <Logo size={28} />
-               <h1 className="font-normal text-xl tracking-tight">VibeCoder</h1>
+               <h1 className="font-normal text-xl tracking-tight hidden sm:block">VibeCoder</h1>
             </div>
           </div>
           
@@ -377,32 +468,30 @@ export default function App() {
             <Button variant="icon" onClick={() => setIsSettingsOpen(true)} title="Settings">
               <Settings size={24} />
             </Button>
-            <div className="w-8 h-8 rounded-full bg-md-sys-color-primary-container text-md-sys-color-on-primary-container flex items-center justify-center text-sm font-bold ml-2">
+            <div className="w-8 h-8 rounded-full bg-md-sys-color-primary-container text-md-sys-color-on-primary-container flex items-center justify-center text-sm font-bold ml-2 shadow-inner ring-2 ring-md-sys-color-primary/20">
                {user.username.charAt(0).toUpperCase()}
             </div>
           </div>
         </header>
 
         <div className="flex-1 flex overflow-hidden">
-           {/* Chat Area */}
-           <div className={`flex flex-col w-full md:w-1/2 lg:w-[45%] h-full ${activeSession?.codeVersions.length ? 'hidden md:flex' : 'flex'}`}>
+           <div className={`flex flex-col w-full md:w-1/2 lg:w-[45%] h-full ${activeSession?.codeVersions.length ? 'hidden md:flex' : 'flex'} border-r border-md-sys-color-outline-variant/20`}>
               <div className="flex-1 overflow-y-auto custom-scrollbar scroll-smooth p-2">
                   {messages.map((msg) => (
                     <ChatMessage key={msg.id} message={msg} />
                   ))}
                   {isThinking && (
                      <div className="flex items-center gap-3 px-6 py-4 opacity-70">
-                       <div className="w-2 h-2 bg-md-sys-color-primary rounded-full animate-bounce" />
-                       <div className="w-2 h-2 bg-md-sys-color-primary rounded-full animate-bounce delay-75" />
-                       <div className="w-2 h-2 bg-md-sys-color-primary rounded-full animate-bounce delay-150" />
+                       <div className="w-2 h-2 bg-md-sys-color-primary rounded-full animate-bounce shadow-[0_0_10px_var(--md-sys-color-primary)]" />
+                       <div className="w-2 h-2 bg-md-sys-color-primary rounded-full animate-bounce delay-75 shadow-[0_0_10px_var(--md-sys-color-primary)]" />
+                       <div className="w-2 h-2 bg-md-sys-color-primary rounded-full animate-bounce delay-150 shadow-[0_0_10px_var(--md-sys-color-primary)]" />
                      </div>
                   )}
                   <div ref={messagesEndRef} />
               </div>
 
-              {/* Input Area - M3 Style */}
-              <div className="p-4 bg-md-sys-color-surface transition-colors duration-300">
-                <div className="relative flex items-end gap-2 p-1 bg-md-sys-color-surface-container-high rounded-[28px] border-2 border-transparent focus-within:border-md-sys-color-primary transition-all">
+              <div className="p-4 bg-md-sys-color-surface/50 backdrop-blur-md transition-colors duration-300">
+                <div className="relative flex items-end gap-2 p-1 bg-md-sys-color-surface-container-high/80 backdrop-blur rounded-[28px] border border-md-sys-color-outline-variant/30 focus-within:border-md-sys-color-primary focus-within:ring-1 focus-within:ring-md-sys-color-primary/50 transition-all shadow-lg">
                   <textarea
                     ref={textareaRef}
                     value={inputValue}
@@ -416,7 +505,7 @@ export default function App() {
                     onClick={handleSendMessage} 
                     disabled={!inputValue.trim() || isThinking}
                     variant="filled"
-                    className="mb-2 mr-2 w-10 h-10 min-w-[40px] min-h-[40px] p-0"
+                    className="mb-2 mr-2 w-10 h-10 min-w-[40px] min-h-[40px] p-0 shadow-md"
                   >
                     <Send size={20} />
                   </Button>
@@ -424,9 +513,9 @@ export default function App() {
               </div>
            </div>
 
-           {/* Canvas Area */}
            <div className={`flex-1 flex-col h-full ${activeSession?.codeVersions.length ? 'flex' : 'hidden md:flex'}`}>
               <CodePreview 
+                sessionId={activeSessionId || 'default'}
                 code={currentCode} 
                 testCode={testCode}
                 versions={versions}

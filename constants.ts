@@ -1,6 +1,4 @@
 
-
-
 export const MODEL_NAME = 'gemini-2.5-flash';
 
 export const DEFAULT_TEST_CODE = `// Write your unit tests here using Mocha & Chai
@@ -19,10 +17,49 @@ describe('App Component', () => {
 });
 `;
 
+export const DEFAULT_PROJECT_TEMPLATES = [
+  {
+    id: 'blank',
+    name: 'Blank Canvas',
+    description: 'Start from scratch with an empty project.',
+    prompt: '',
+    icon: 'FilePlus'
+  },
+  {
+    id: 'portfolio',
+    name: 'Portfolio Site',
+    description: 'Professional personal website with projects section.',
+    prompt: "Create a modern, responsive portfolio website. Include a hero section with a brief intro, an 'About' section, a 'Skills' grid, a 'Projects' showcase with cards, and a footer. Use a sleek dark theme with gradient accents.",
+    icon: 'Briefcase'
+  },
+  {
+    id: 'landing',
+    name: 'Product Landing',
+    description: 'High-converting landing page structure.',
+    prompt: "Build a high-converting product landing page. Include a sticky navbar, a hero section with headline and CTA, a features section with 3 columns, social proof/testimonials, and a pricing table.",
+    icon: 'Layout'
+  },
+  {
+    id: 'dashboard',
+    name: 'Admin Dashboard',
+    description: 'Data dashboard layout with sidebar.',
+    prompt: "Create a modern admin dashboard layout. It should feature a fixed sidebar navigation, a top header with user profile, and a main content area containing a grid of stat cards and a placeholder for a large chart.",
+    icon: 'LayoutDashboard'
+  },
+  {
+    id: 'blog',
+    name: 'Blog Layout',
+    description: 'Clean typography-focused blog feed.',
+    prompt: "Design a minimal, typography-centric blog homepage. It should have a clean header, a featured post section, and a masonry grid of recent articles with thumbnail images and read times.",
+    icon: 'Newspaper'
+  }
+];
+
 export const FRAMEWORKS = {
   tailwind: {
     name: 'Tailwind CSS',
     value: 'tailwind',
+    description: 'A utility-first CSS framework for rapidly building custom, modern user interfaces without leaving HTML.',
     scripts: '<script src="https://cdn.tailwindcss.com"></script>',
     instructions: `
       1. Use Tailwind CSS classes for styling. 
@@ -34,6 +71,7 @@ export const FRAMEWORKS = {
   'material-ui': {
     name: 'Material UI',
     value: 'material-ui',
+    description: 'Google\'s comprehensive React UI framework implementing Material Design principles for faster development.',
     scripts: `
       <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
       <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -54,6 +92,7 @@ export const FRAMEWORKS = {
   'chakra-ui': {
     name: 'Chakra UI',
     value: 'chakra-ui',
+    description: 'A simple, modular, and accessible component library that gives you the building blocks to build React applications.',
     scripts: `
       <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
       <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -74,6 +113,7 @@ export const FRAMEWORKS = {
   bootstrap: {
     name: 'Bootstrap',
     value: 'bootstrap',
+    description: 'The world\'s most popular frontend open source toolkit for building responsive, mobile-first sites.',
     scripts: `
       <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
       <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
