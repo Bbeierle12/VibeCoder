@@ -1,8 +1,9 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Menu, Settings, BrainCircuit } from 'lucide-react';
-import { Message, Role, User, ChatSession, CodeVersion, StyleFramework, Skill, Theme, ProjectTemplate } from './types';
+import { Message, Role, User, ChatSession, CodeVersion, StyleFramework, Skill, Theme, ProjectTemplate, LLMSettings } from './types';
 import { sendMessageStream, initializeChat } from './services/geminiService';
+import { sendLocalMessageStream, initializeLocalChat } from './services/localLLMService';
 import { storage } from './services/storage';
 import { extractHtmlCode, generateId } from './utils/helpers';
 import { ChatMessage } from './components/ChatMessage';
@@ -29,6 +30,7 @@ export default function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState('');
   const [isThinking, setIsThinking] = useState(false);
+  const [llmSettings, setLLMSettings] = useState<LLMSettings>(storage.getLLMSettings());
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -61,6 +63,33 @@ export default function App() {
       .map(s => `${s.name}:\n${s.content}`)
       .join('\n\n');
   }, []);
+
+  // Helper to initialize chat with the correct provider
+  const initializeChatWithProvider = useCallback((
+    framework: StyleFramework,
+    history: Message[],
+    skillsContext: string,
+    settings: LLMSettings = llmSettings
+  ) => {
+    if (settings.provider === 'local') {
+      initializeLocalChat(settings.localConfig, framework, history, skillsContext);
+    } else {
+      initializeChat(framework, history, skillsContext);
+    }
+  }, [llmSettings]);
+
+  // Helper to send message with the correct provider
+  // Note: For local LLM, initialization happens via initializeChatWithProvider before this is called
+  const sendMessageWithProvider = useCallback(async (
+    content: string,
+    onChunk: (text: string) => void
+  ): Promise<string> => {
+    if (llmSettings.provider === 'local') {
+      return sendLocalMessageStream(content, onChunk);
+    } else {
+      return sendMessageStream(content, onChunk);
+    }
+  }, [llmSettings]);
 
   const createNewSession = useCallback((templateId: string = 'blank', currentSkills = skills) => {
     // Look up in dynamic templates, fallback to defaults just in case
@@ -101,12 +130,12 @@ export default function App() {
     setSessions(prev => [newSession, ...prev]);
     setActiveSessionId(newSession.id);
     storage.saveSession(newSession);
-    initializeChat(newSession.framework, newSession.messages, getEnabledSkillsContext(currentSkills));
+    initializeChatWithProvider(newSession.framework, newSession.messages, getEnabledSkillsContext(currentSkills));
     
     if (window.innerWidth < 768) setIsHistoryOpen(false);
     
     return newSession;
-  }, [skills, templates, getEnabledSkillsContext]);
+  }, [skills, templates, getEnabledSkillsContext, initializeChatWithProvider]);
 
   useEffect(() => {
     const loadedUser = storage.getUser();
@@ -121,13 +150,26 @@ export default function App() {
     const loadedTemplates = storage.getTemplates();
     setTemplates(loadedTemplates);
 
+    const loadedLLMSettings = storage.getLLMSettings();
+    setLLMSettings(loadedLLMSettings);
+
     if (loadedSessions.length > 0) {
       setActiveSessionId(loadedSessions[0].id);
-      initializeChat(
-        loadedSessions[0].framework, 
-        loadedSessions[0].messages, 
-        getEnabledSkillsContext(loadedSkills)
-      );
+      // Use the loaded settings directly since state hasn't updated yet
+      if (loadedLLMSettings.provider === 'local') {
+        initializeLocalChat(
+          loadedLLMSettings.localConfig,
+          loadedSessions[0].framework, 
+          loadedSessions[0].messages, 
+          getEnabledSkillsContext(loadedSkills)
+        );
+      } else {
+        initializeChat(
+          loadedSessions[0].framework, 
+          loadedSessions[0].messages, 
+          getEnabledSkillsContext(loadedSkills)
+        );
+      }
     } else {
       // Don't auto-create on load to avoid clutter, let user choose from template modal if they want
       // But if we truly have nothing, maybe prompt? For now, leave empty state.
@@ -148,7 +190,7 @@ export default function App() {
 
   useEffect(() => {
     if (activeSession) {
-      initializeChat(
+      initializeChatWithProvider(
         activeSession.framework, 
         activeSession.messages,
         getEnabledSkillsContext(skills)
@@ -172,7 +214,7 @@ export default function App() {
   const handleFrameworkChange = (framework: StyleFramework) => {
     if (!activeSession) return;
     updateActiveSession({ framework });
-    initializeChat(framework, activeSession.messages, getEnabledSkillsContext(skills));
+    initializeChatWithProvider(framework, activeSession.messages, getEnabledSkillsContext(skills));
     const systemMsg: Message = {
       id: generateId(),
       role: Role.MODEL,
@@ -189,7 +231,15 @@ export default function App() {
     setSkills(newSkills);
     storage.saveSkills(newSkills);
     if (activeSession) {
-      initializeChat(activeSession.framework, activeSession.messages, getEnabledSkillsContext(newSkills));
+      initializeChatWithProvider(activeSession.framework, activeSession.messages, getEnabledSkillsContext(newSkills));
+    }
+  };
+
+  const handleLLMSettingsChange = (newSettings: LLMSettings) => {
+    setLLMSettings(newSettings);
+    storage.saveLLMSettings(newSettings);
+    if (activeSession) {
+      initializeChatWithProvider(activeSession.framework, activeSession.messages, getEnabledSkillsContext(skills), newSettings);
     }
   };
   
@@ -222,7 +272,18 @@ export default function App() {
       setIsThinking(true);
       
       let currentSession = sessionObj || sessions.find(s => s.id === sessionId);
-      if (!currentSession) return;
+      if (!currentSession) {
+        console.error('No session found for id:', sessionId);
+        setIsThinking(false);
+        return;
+      }
+
+      // Ensure chat is initialized with current provider before sending
+      initializeChatWithProvider(
+        currentSession.framework,
+        currentSession.messages,
+        getEnabledSkillsContext(skills)
+      );
 
       try {
         const modelMessageId = generateId();
@@ -246,7 +307,7 @@ export default function App() {
 
         let accumulatedText = "";
         
-        await sendMessageStream(promptText, (streamedText) => {
+        await sendMessageWithProvider(promptText, (streamedText) => {
             accumulatedText = streamedText;
             setSessions(prev => prev.map(session => {
             if (session.id === sessionId) {
@@ -291,15 +352,18 @@ export default function App() {
 
       } catch (error) {
         console.error(error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
         setSessions(prev => prev.map(session => {
              if (session.id === sessionId) {
                  const errMsg: Message = {
                     id: generateId(),
                     role: Role.MODEL,
-                    content: "I encountered an error generating the project. Please try again.",
+                    content: `I encountered an error: ${errorMessage}. Please check your settings and try again.`,
                     timestamp: Date.now()
                  };
-                 return { ...session, messages: [...session.messages, errMsg] };
+                 // Remove the empty model message if it exists
+                 const filteredMessages = session.messages.filter(msg => msg.content !== '');
+                 return { ...session, messages: [...filteredMessages, errMsg] };
              }
              return session;
         }));
@@ -309,33 +373,55 @@ export default function App() {
   };
 
   const handleSendMessage = async () => {
-    if (!inputValue.trim() || isThinking || !activeSessionId) return;
+    if (!inputValue.trim() || isThinking) return;
+    
+    const messageContent = inputValue.trim();
+    setInputValue('');
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    
+    // If no active session, create one first
+    let currentSession: ChatSession | undefined;
+    let sessionId = activeSessionId;
+    
+    if (!sessionId) {
+      const newSession = createNewSession('blank');
+      sessionId = newSession.id;
+      currentSession = newSession;
+    } else {
+      currentSession = sessions.find(s => s.id === sessionId);
+    }
+    
+    if (!currentSession) {
+      console.error('Failed to get or create session');
+      return;
+    }
     
     const userMessage: Message = {
       id: generateId(),
       role: Role.USER,
-      content: inputValue.trim(),
+      content: messageContent,
       timestamp: Date.now(),
     };
 
-    setInputValue('');
-    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    // Update the session with the user message
+    const updatedSession: ChatSession = {
+      ...currentSession,
+      messages: [...currentSession.messages, userMessage],
+      title: currentSession.messages.length <= 1 ? messageContent.slice(0, 30) : currentSession.title,
+      lastModified: Date.now()
+    };
 
-    setSessions(prev => prev.map(session => {
-        if (session.id === activeSessionId) {
-            const updatedMessages = [...session.messages, userMessage];
-            const updatedSession = { 
-                ...session, 
-                messages: updatedMessages,
-                title: session.messages.length <= 1 ? userMessage.content.slice(0, 30) : session.title
-            };
-            storage.saveSession(updatedSession);
-            return updatedSession;
-        }
-        return session;
-    }));
+    setSessions(prev => {
+      const exists = prev.find(s => s.id === sessionId);
+      if (exists) {
+        return prev.map(session => session.id === sessionId ? updatedSession : session);
+      }
+      return prev;
+    });
+    storage.saveSession(updatedSession);
 
-    await triggerModelGeneration(activeSessionId, userMessage.content);
+    // Pass the updated session directly so we don't have stale state issues
+    await triggerModelGeneration(sessionId, messageContent, updatedSession);
   };
 
   const handleUndo = () => {
@@ -432,6 +518,8 @@ export default function App() {
         onFrameworkChange={handleFrameworkChange}
         currentTheme={theme}
         onThemeChange={handleThemeChange}
+        llmSettings={llmSettings}
+        onLLMSettingsChange={handleLLMSettingsChange}
       />
       
       <SkillsModal

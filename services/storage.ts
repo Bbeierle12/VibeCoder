@@ -1,5 +1,5 @@
 
-import { User, ChatSession, Skill, Theme, ProjectTemplate } from '../types';
+import { User, ChatSession, Skill, Theme, ProjectTemplate, LLMSettings } from '../types';
 import { DEFAULT_TEST_CODE, DEFAULT_PROJECT_TEMPLATES } from '../constants';
 
 const STORAGE_KEYS = {
@@ -7,7 +7,17 @@ const STORAGE_KEYS = {
   SESSIONS: 'vibecoder_sessions',
   SKILLS: 'vibecoder_skills',
   THEME: 'vibecoder_theme',
-  TEMPLATES: 'vibecoder_templates'
+  TEMPLATES: 'vibecoder_templates',
+  LLM_SETTINGS: 'vibecoder_llm_settings'
+};
+
+const DEFAULT_LLM_SETTINGS: LLMSettings = {
+  provider: 'gemini',
+  localConfig: {
+    endpoint: 'http://localhost:11434',
+    modelName: 'llama3.2',
+    provider: 'ollama'
+  }
 };
 
 const DEFAULT_SKILLS: Skill[] = [
@@ -118,5 +128,18 @@ export const storage = {
 
   saveTemplates: (templates: ProjectTemplate[]) => {
     localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(templates));
+  },
+
+  getLLMSettings: (): LLMSettings => {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.LLM_SETTINGS);
+      return data ? JSON.parse(data) : DEFAULT_LLM_SETTINGS;
+    } catch (e) {
+      return DEFAULT_LLM_SETTINGS;
+    }
+  },
+
+  saveLLMSettings: (settings: LLMSettings) => {
+    localStorage.setItem(STORAGE_KEYS.LLM_SETTINGS, JSON.stringify(settings));
   }
 };

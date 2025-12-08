@@ -45,6 +45,19 @@ export type StyleFramework = 'tailwind' | 'material-ui' | 'chakra-ui' | 'bootstr
 
 export type Theme = 'light' | 'dark';
 
+export type LLMProvider = 'gemini' | 'local';
+
+export interface LocalLLMConfig {
+  endpoint: string;
+  modelName: string;
+  provider: 'ollama' | 'lmstudio' | 'custom';
+}
+
+export interface LLMSettings {
+  provider: LLMProvider;
+  localConfig: LocalLLMConfig;
+}
+
 export interface ChatSession {
   id: string;
   title: string;
