@@ -17,6 +17,10 @@ const DEFAULT_LLM_SETTINGS: LLMSettings = {
     endpoint: 'http://localhost:11434',
     modelName: 'llama3.2',
     provider: 'ollama'
+  },
+  claudeCliConfig: {
+    serverUrl: 'http://localhost:3456',
+    model: 'claude-sonnet-4-20250514'
   }
 };
 

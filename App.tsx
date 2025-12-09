@@ -4,6 +4,7 @@ import { Send, Menu, Settings, BrainCircuit } from 'lucide-react';
 import { Message, Role, User, ChatSession, CodeVersion, StyleFramework, Skill, Theme, ProjectTemplate, LLMSettings } from './types';
 import { sendMessageStream, initializeChat } from './services/geminiService';
 import { sendLocalMessageStream, initializeLocalChat } from './services/localLLMService';
+import { sendClaudeMessageStream, initializeClaudeChat } from './services/claudeCliService';
 import { storage } from './services/storage';
 import { extractHtmlCode, generateId } from './utils/helpers';
 import { ChatMessage } from './components/ChatMessage';
@@ -39,20 +40,26 @@ export default function App() {
   useEffect(() => {
     const loadedTheme = storage.getTheme();
     setTheme(loadedTheme);
+    // Remove all theme classes first
+    document.body.classList.remove('dark', 'cyberpunk');
+    // Add the appropriate class
     if (loadedTheme === 'dark') {
       document.body.classList.add('dark');
-    } else {
-      document.body.classList.remove('dark');
+    } else if (loadedTheme === 'cyberpunk') {
+      document.body.classList.add('cyberpunk');
     }
   }, []);
 
   const handleThemeChange = (newTheme: Theme) => {
     setTheme(newTheme);
     storage.saveTheme(newTheme);
+    // Remove all theme classes first
+    document.body.classList.remove('dark', 'cyberpunk');
+    // Add the appropriate class
     if (newTheme === 'dark') {
       document.body.classList.add('dark');
-    } else {
-      document.body.classList.remove('dark');
+    } else if (newTheme === 'cyberpunk') {
+      document.body.classList.add('cyberpunk');
     }
   };
 
@@ -73,6 +80,8 @@ export default function App() {
   ) => {
     if (settings.provider === 'local') {
       initializeLocalChat(settings.localConfig, framework, history, skillsContext);
+    } else if (settings.provider === 'claude-cli') {
+      initializeClaudeChat(settings.claudeCliConfig, framework, history, skillsContext);
     } else {
       initializeChat(framework, history, skillsContext);
     }
@@ -86,6 +95,8 @@ export default function App() {
   ): Promise<string> => {
     if (llmSettings.provider === 'local') {
       return sendLocalMessageStream(content, onChunk);
+    } else if (llmSettings.provider === 'claude-cli') {
+      return sendClaudeMessageStream(content, onChunk);
     } else {
       return sendMessageStream(content, onChunk);
     }
@@ -161,6 +172,13 @@ export default function App() {
           loadedLLMSettings.localConfig,
           loadedSessions[0].framework, 
           loadedSessions[0].messages, 
+          getEnabledSkillsContext(loadedSkills)
+        );
+      } else if (loadedLLMSettings.provider === 'claude-cli') {
+        initializeClaudeChat(
+          loadedLLMSettings.claudeCliConfig,
+          loadedSessions[0].framework,
+          loadedSessions[0].messages,
           getEnabledSkillsContext(loadedSkills)
         );
       } else {

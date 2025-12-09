@@ -1,12 +1,13 @@
 
 
 import React, { useState, useEffect } from 'react';
-import { StyleFramework, Theme, LLMSettings, LocalLLMConfig } from '../types';
+import { StyleFramework, Theme, LLMSettings, LocalLLMConfig, ClaudeCliConfig } from '../types';
 import { FRAMEWORKS } from '../constants';
 import { Button } from './Button';
-import { X, Layers, CheckCircle2, Moon, Sun, Cloud, Server, Loader2, AlertCircle, Check, ChevronDown } from 'lucide-react';
+import { X, Layers, CheckCircle2, Moon, Sun, Cloud, Server, Loader2, AlertCircle, Check, ChevronDown, Sparkles, Zap } from 'lucide-react';
 import { clsx } from 'clsx';
 import { testLocalConnection, getDefaultEndpoint } from '../services/localLLMService';
+import { testClaudeConnection, CLAUDE_MODELS, getDefaultClaudeConfig } from '../services/claudeCliService';
 
 // Popular model presets
 const MODEL_PRESETS = [
@@ -42,33 +43,42 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose
 }) => {
   const [localConfig, setLocalConfig] = useState<LocalLLMConfig>(llmSettings.localConfig);
+  const [claudeConfig, setClaudeConfig] = useState<ClaudeCliConfig>(llmSettings.claudeCliConfig || getDefaultClaudeConfig());
   const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [isTestingClaudeConnection, setIsTestingClaudeConnection] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<{ success?: boolean; error?: string; models?: string[] } | null>(null);
+  const [claudeConnectionStatus, setClaudeConnectionStatus] = useState<{ success?: boolean; error?: string } | null>(null);
   const [configSaved, setConfigSaved] = useState(false);
+  const [claudeConfigSaved, setClaudeConfigSaved] = useState(false);
   const [useCustomModel, setUseCustomModel] = useState(false);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [showClaudeModelDropdown, setShowClaudeModelDropdown] = useState(false);
 
   useEffect(() => {
     setLocalConfig(llmSettings.localConfig);
+    setClaudeConfig(llmSettings.claudeCliConfig || getDefaultClaudeConfig());
     setConfigSaved(false);
+    setClaudeConfigSaved(false);
     // Check if current model is a preset or custom
     const isPreset = MODEL_PRESETS.some(p => p.value === llmSettings.localConfig.modelName);
     setUseCustomModel(!isPreset && llmSettings.localConfig.modelName !== '');
-  }, [llmSettings.localConfig]);
+  }, [llmSettings.localConfig, llmSettings.claudeCliConfig]);
 
   // Reset configSaved when modal opens
   useEffect(() => {
     if (isOpen) {
       setConfigSaved(false);
+      setClaudeConfigSaved(false);
     }
   }, [isOpen]);
 
-  const handleProviderChange = (provider: 'gemini' | 'local') => {
+  const handleProviderChange = (provider: 'gemini' | 'local' | 'claude-cli') => {
     onLLMSettingsChange({
       ...llmSettings,
       provider
     });
     setConfigSaved(false);
+    setClaudeConfigSaved(false);
   };
 
   const handleLocalProviderChange = (localProvider: 'ollama' | 'lmstudio' | 'custom') => {
@@ -91,6 +101,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleModelChange = (modelName: string) => {
     setLocalConfig({ ...localConfig, modelName });
     setConfigSaved(false);
+  };
+
+  // Claude CLI handlers
+  const handleClaudeServerUrlChange = (serverUrl: string) => {
+    setClaudeConfig({ ...claudeConfig, serverUrl });
+    setClaudeConnectionStatus(null);
+    setClaudeConfigSaved(false);
+  };
+
+  const handleClaudeModelChange = (model: string) => {
+    setClaudeConfig({ ...claudeConfig, model });
+    setClaudeConfigSaved(false);
+  };
+
+  const handleTestClaudeConnection = async () => {
+    setIsTestingClaudeConnection(true);
+    setClaudeConnectionStatus(null);
+    setClaudeConfigSaved(false);
+    
+    const result = await testClaudeConnection(claudeConfig);
+    setClaudeConnectionStatus(result);
+    
+    setIsTestingClaudeConnection(false);
+  };
+
+  const handleSaveClaudeConfig = () => {
+    onLLMSettingsChange({
+      ...llmSettings,
+      provider: 'claude-cli',
+      claudeCliConfig: claudeConfig
+    });
+    setClaudeConfigSaved(true);
+    
+    setTimeout(() => setClaudeConfigSaved(false), 2000);
   };
 
   const handleTestConnection = async () => {
@@ -145,31 +189,44 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* Appearance Section */}
           <div className="mb-8">
             <h3 className="text-sm font-medium text-md-sys-color-primary mb-4">Appearance</h3>
-            <div className="flex gap-4">
-              <button 
+            <div className="flex gap-3">
+              <button
                 onClick={() => onThemeChange('light')}
                 className={clsx(
-                  "flex-1 flex flex-col items-center gap-3 p-4 rounded-2xl border transition-all",
+                  "flex-1 flex flex-col items-center gap-2 p-3 rounded-2xl border transition-all",
                   currentTheme === 'light'
                     ? "bg-md-sys-color-secondary-container border-md-sys-color-secondary-container text-md-sys-color-on-secondary-container"
                     : "bg-transparent border-md-sys-color-outline-variant hover:border-md-sys-color-outline text-md-sys-color-on-surface"
                 )}
               >
-                <Sun size={24} />
-                <span className="font-medium text-sm">Light</span>
+                <Sun size={22} />
+                <span className="font-medium text-xs">Light</span>
               </button>
-              
-              <button 
+
+              <button
                 onClick={() => onThemeChange('dark')}
                 className={clsx(
-                  "flex-1 flex flex-col items-center gap-3 p-4 rounded-2xl border transition-all",
+                  "flex-1 flex flex-col items-center gap-2 p-3 rounded-2xl border transition-all",
                   currentTheme === 'dark'
                     ? "bg-md-sys-color-secondary-container border-md-sys-color-secondary-container text-md-sys-color-on-secondary-container"
                     : "bg-transparent border-md-sys-color-outline-variant hover:border-md-sys-color-outline text-md-sys-color-on-surface"
                 )}
               >
-                <Moon size={24} />
-                <span className="font-medium text-sm">Dark</span>
+                <Moon size={22} />
+                <span className="font-medium text-xs">Dark</span>
+              </button>
+
+              <button
+                onClick={() => onThemeChange('cyberpunk')}
+                className={clsx(
+                  "flex-1 flex flex-col items-center gap-2 p-3 rounded-2xl border transition-all",
+                  currentTheme === 'cyberpunk'
+                    ? "bg-md-sys-color-secondary-container border-md-sys-color-secondary-container text-md-sys-color-on-secondary-container"
+                    : "bg-transparent border-md-sys-color-outline-variant hover:border-md-sys-color-outline text-md-sys-color-on-surface"
+                )}
+              >
+                <Zap size={22} />
+                <span className="font-medium text-xs">Cyberpunk</span>
               </button>
             </div>
           </div>
@@ -190,6 +247,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <Cloud size={24} />
                 <span className="font-medium text-sm">Gemini</span>
               </button>
+
+              <button 
+                onClick={() => handleProviderChange('claude-cli')}
+                className={clsx(
+                  "flex-1 flex flex-col items-center gap-3 p-4 rounded-2xl border transition-all",
+                  llmSettings.provider === 'claude-cli'
+                    ? "bg-md-sys-color-secondary-container border-md-sys-color-secondary-container text-md-sys-color-on-secondary-container"
+                    : "bg-transparent border-md-sys-color-outline-variant hover:border-md-sys-color-outline text-md-sys-color-on-surface"
+                )}
+              >
+                <Sparkles size={24} />
+                <span className="font-medium text-sm">Claude CLI</span>
+              </button>
               
               <button 
                 onClick={() => handleProviderChange('local')}
@@ -204,6 +274,125 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <span className="font-medium text-sm">Local LLM</span>
               </button>
             </div>
+
+            {/* Claude CLI Configuration */}
+            {llmSettings.provider === 'claude-cli' && (
+              <div className="p-4 rounded-2xl border border-md-sys-color-outline-variant bg-md-sys-color-surface-container-low space-y-4">
+                <div className="text-xs text-md-sys-color-on-surface-variant p-3 bg-md-sys-color-surface-container rounded-lg border border-md-sys-color-outline-variant">
+                  <p className="font-medium mb-1">⚡ Uses your Claude subscription limits</p>
+                  <p>Requires a local proxy server. Run: <code className="bg-md-sys-color-surface-container-high px-1 py-0.5 rounded">npx claude-cli-proxy</code></p>
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-md-sys-color-on-surface-variant mb-2 block">Proxy Server URL</label>
+                  <input
+                    type="text"
+                    value={claudeConfig.serverUrl}
+                    onChange={(e) => handleClaudeServerUrlChange(e.target.value)}
+                    placeholder="http://localhost:3456"
+                    className="w-full px-4 py-3 rounded-xl bg-md-sys-color-surface-container border border-md-sys-color-outline-variant text-md-sys-color-on-surface placeholder:text-md-sys-color-on-surface-variant/50 focus:outline-none focus:border-md-sys-color-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-md-sys-color-on-surface-variant mb-2 block">Model</label>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowClaudeModelDropdown(!showClaudeModelDropdown)}
+                      className="w-full px-4 py-3 rounded-xl bg-md-sys-color-surface-container border border-md-sys-color-outline-variant text-md-sys-color-on-surface focus:outline-none focus:border-md-sys-color-primary flex items-center justify-between"
+                    >
+                      <span>
+                        {CLAUDE_MODELS.find(m => m.value === claudeConfig.model)?.name || claudeConfig.model}
+                      </span>
+                      <ChevronDown size={16} className={clsx("transition-transform", showClaudeModelDropdown && "rotate-180")} />
+                    </button>
+                    
+                    {showClaudeModelDropdown && (
+                      <div className="absolute z-50 w-full mt-1 py-1 bg-md-sys-color-surface-container border border-md-sys-color-outline-variant rounded-xl shadow-lg max-h-64 overflow-y-auto">
+                        {CLAUDE_MODELS.map((model) => (
+                          <button
+                            key={model.value}
+                            type="button"
+                            onClick={() => {
+                              handleClaudeModelChange(model.value);
+                              setShowClaudeModelDropdown(false);
+                            }}
+                            className={clsx(
+                              "w-full px-4 py-2 text-left hover:bg-md-sys-color-surface-container-high transition-colors",
+                              claudeConfig.model === model.value && "bg-md-sys-color-primary/10"
+                            )}
+                          >
+                            <div className="font-medium text-sm text-md-sys-color-on-surface">{model.name}</div>
+                            <div className="text-xs text-md-sys-color-on-surface-variant">{model.description}</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleTestClaudeConnection}
+                    disabled={isTestingClaudeConnection}
+                    className="flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl bg-md-sys-color-surface-container-high border border-md-sys-color-outline-variant text-md-sys-color-on-surface hover:bg-md-sys-color-surface-container transition-all disabled:opacity-50"
+                  >
+                    {isTestingClaudeConnection ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <Sparkles size={16} />
+                    )}
+                    <span className="text-sm font-medium">Test Connection</span>
+                  </button>
+                  <button
+                    onClick={handleSaveClaudeConfig}
+                    disabled={!claudeConfig.model || !claudeConfig.serverUrl}
+                    className={clsx(
+                      "flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl transition-all",
+                      claudeConfigSaved 
+                        ? "bg-green-500 text-white"
+                        : "bg-md-sys-color-primary text-md-sys-color-on-primary hover:opacity-90",
+                      (!claudeConfig.model || !claudeConfig.serverUrl) && "opacity-50 cursor-not-allowed"
+                    )}
+                  >
+                    <Check size={16} />
+                    <span className="text-sm font-medium">{claudeConfigSaved ? 'Saved!' : 'Save Config'}</span>
+                  </button>
+                </div>
+
+                {claudeConnectionStatus && (
+                  <div className={clsx(
+                    "flex items-center gap-2 p-3 rounded-xl text-sm",
+                    claudeConnectionStatus.success 
+                      ? "bg-green-500/10 text-green-400" 
+                      : "bg-red-500/10 text-red-400"
+                  )}>
+                    {claudeConnectionStatus.success ? (
+                      <>
+                        <CheckCircle2 size={16} />
+                        <span>Connected to Claude CLI proxy!</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle size={16} />
+                        <span>{claudeConnectionStatus.error || 'Connection failed'}</span>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* Current Config Display */}
+                {llmSettings.claudeCliConfig?.model && (
+                  <div className="text-xs text-md-sys-color-on-surface-variant p-2 bg-md-sys-color-surface-container rounded-lg">
+                    <span className="font-medium">Active: </span>
+                    <span className="text-md-sys-color-primary">{CLAUDE_MODELS.find(m => m.value === llmSettings.claudeCliConfig.model)?.name || llmSettings.claudeCliConfig.model}</span>
+                    <span className="mx-1">@</span>
+                    <span className="opacity-70">{llmSettings.claudeCliConfig.serverUrl}</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Local LLM Configuration */}
             {llmSettings.provider === 'local' && (
