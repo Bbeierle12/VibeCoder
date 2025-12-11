@@ -1,14 +1,14 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Menu, Settings, BrainCircuit } from 'lucide-react';
-import { Message, Role, User, ChatSession, CodeVersion, StyleFramework, Skill, Theme, ProjectTemplate, LLMSettings } from './types';
-import { sendMessageStream, initializeChat } from './services/geminiService';
-import { sendLocalMessageStream, initializeLocalChat } from './services/localLLMService';
+import { Send, Menu, Settings, BrainCircuit, LayoutGrid, MessageSquare } from 'lucide-react';
+import { Message, Role, User, ChatSession, CodeVersion, StyleFramework, Skill, Theme, ProjectTemplate, ClaudeSettings } from './types';
+import { CanvasItemData } from './types/canvas';
 import { sendClaudeMessageStream, initializeClaudeChat } from './services/claudeCliService';
 import { storage } from './services/storage';
-import { extractHtmlCode, generateId } from './utils/helpers';
+import { extractHtmlCode, generateId, applyThemeToBody, cleanupDrafts } from './utils/helpers';
 import { ChatMessage } from './components/ChatMessage';
 import { CodePreview } from './components/CodePreview';
+import { InfiniteCanvas } from './components/InfiniteCanvas';
 import { Button } from './components/Button';
 import { AuthModal } from './components/AuthModal';
 import { HistorySidebar } from './components/HistorySidebar';
@@ -21,6 +21,7 @@ import { DEFAULT_TEST_CODE, DEFAULT_PROJECT_TEMPLATES } from './constants';
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [theme, setTheme] = useState<Theme>('dark');
+  const [viewMode, setViewMode] = useState<'chat' | 'canvas'>('canvas'); // Default to canvas!
   const [isHistoryOpen, setIsHistoryOpen] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSkillsOpen, setIsSkillsOpen] = useState(false);
@@ -31,7 +32,8 @@ export default function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState('');
   const [isThinking, setIsThinking] = useState(false);
-  const [llmSettings, setLLMSettings] = useState<LLMSettings>(storage.getLLMSettings());
+  const [claudeSettings, setClaudeSettings] = useState<ClaudeSettings>(storage.getClaudeSettings());
+  const [canvasItems, setCanvasItems] = useState<CanvasItemData[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -40,27 +42,13 @@ export default function App() {
   useEffect(() => {
     const loadedTheme = storage.getTheme();
     setTheme(loadedTheme);
-    // Remove all theme classes first
-    document.body.classList.remove('dark', 'cyberpunk');
-    // Add the appropriate class
-    if (loadedTheme === 'dark') {
-      document.body.classList.add('dark');
-    } else if (loadedTheme === 'cyberpunk') {
-      document.body.classList.add('cyberpunk');
-    }
+    applyThemeToBody(loadedTheme);
   }, []);
 
   const handleThemeChange = (newTheme: Theme) => {
     setTheme(newTheme);
     storage.saveTheme(newTheme);
-    // Remove all theme classes first
-    document.body.classList.remove('dark', 'cyberpunk');
-    // Add the appropriate class
-    if (newTheme === 'dark') {
-      document.body.classList.add('dark');
-    } else if (newTheme === 'cyberpunk') {
-      document.body.classList.add('cyberpunk');
-    }
+    applyThemeToBody(newTheme);
   };
 
   // Helper to get enabled skills string
@@ -71,36 +59,15 @@ export default function App() {
       .join('\n\n');
   }, []);
 
-  // Helper to initialize chat with the correct provider
-  const initializeChatWithProvider = useCallback((
+  // Helper to initialize Claude chat
+  const initializeClaude = useCallback((
     framework: StyleFramework,
     history: Message[],
     skillsContext: string,
-    settings: LLMSettings = llmSettings
+    settings: ClaudeSettings = claudeSettings
   ) => {
-    if (settings.provider === 'local') {
-      initializeLocalChat(settings.localConfig, framework, history, skillsContext);
-    } else if (settings.provider === 'claude-cli') {
-      initializeClaudeChat(settings.claudeCliConfig, framework, history, skillsContext);
-    } else {
-      initializeChat(framework, history, skillsContext);
-    }
-  }, [llmSettings]);
-
-  // Helper to send message with the correct provider
-  // Note: For local LLM, initialization happens via initializeChatWithProvider before this is called
-  const sendMessageWithProvider = useCallback(async (
-    content: string,
-    onChunk: (text: string) => void
-  ): Promise<string> => {
-    if (llmSettings.provider === 'local') {
-      return sendLocalMessageStream(content, onChunk);
-    } else if (llmSettings.provider === 'claude-cli') {
-      return sendClaudeMessageStream(content, onChunk);
-    } else {
-      return sendMessageStream(content, onChunk);
-    }
-  }, [llmSettings]);
+    initializeClaudeChat(settings, framework, history, skillsContext);
+  }, [claudeSettings]);
 
   const createNewSession = useCallback((templateId: string = 'blank', currentSkills = skills) => {
     // Look up in dynamic templates, fallback to defaults just in case
@@ -141,12 +108,12 @@ export default function App() {
     setSessions(prev => [newSession, ...prev]);
     setActiveSessionId(newSession.id);
     storage.saveSession(newSession);
-    initializeChatWithProvider(newSession.framework, newSession.messages, getEnabledSkillsContext(currentSkills));
+    initializeClaude(newSession.framework, newSession.messages, getEnabledSkillsContext(currentSkills));
     
     if (window.innerWidth < 768) setIsHistoryOpen(false);
     
     return newSession;
-  }, [skills, templates, getEnabledSkillsContext, initializeChatWithProvider]);
+  }, [skills, templates, getEnabledSkillsContext, initializeClaude]);
 
   useEffect(() => {
     const loadedUser = storage.getUser();
@@ -161,33 +128,20 @@ export default function App() {
     const loadedTemplates = storage.getTemplates();
     setTemplates(loadedTemplates);
 
-    const loadedLLMSettings = storage.getLLMSettings();
-    setLLMSettings(loadedLLMSettings);
+    const loadedClaudeSettings = storage.getClaudeSettings();
+    setClaudeSettings(loadedClaudeSettings);
+
+    // Clean up orphaned drafts from deleted sessions
+    cleanupDrafts(loadedSessions.map(s => s.id));
 
     if (loadedSessions.length > 0) {
       setActiveSessionId(loadedSessions[0].id);
-      // Use the loaded settings directly since state hasn't updated yet
-      if (loadedLLMSettings.provider === 'local') {
-        initializeLocalChat(
-          loadedLLMSettings.localConfig,
-          loadedSessions[0].framework, 
-          loadedSessions[0].messages, 
-          getEnabledSkillsContext(loadedSkills)
-        );
-      } else if (loadedLLMSettings.provider === 'claude-cli') {
-        initializeClaudeChat(
-          loadedLLMSettings.claudeCliConfig,
-          loadedSessions[0].framework,
-          loadedSessions[0].messages,
-          getEnabledSkillsContext(loadedSkills)
-        );
-      } else {
-        initializeChat(
-          loadedSessions[0].framework, 
-          loadedSessions[0].messages, 
-          getEnabledSkillsContext(loadedSkills)
-        );
-      }
+      initializeClaudeChat(
+        loadedClaudeSettings,
+        loadedSessions[0].framework,
+        loadedSessions[0].messages,
+        getEnabledSkillsContext(loadedSkills)
+      );
     } else {
       // Don't auto-create on load to avoid clutter, let user choose from template modal if they want
       // But if we truly have nothing, maybe prompt? For now, leave empty state.
@@ -208,8 +162,8 @@ export default function App() {
 
   useEffect(() => {
     if (activeSession) {
-      initializeChatWithProvider(
-        activeSession.framework, 
+      initializeClaude(
+        activeSession.framework,
         activeSession.messages,
         getEnabledSkillsContext(skills)
       );
@@ -232,7 +186,7 @@ export default function App() {
   const handleFrameworkChange = (framework: StyleFramework) => {
     if (!activeSession) return;
     updateActiveSession({ framework });
-    initializeChatWithProvider(framework, activeSession.messages, getEnabledSkillsContext(skills));
+    initializeClaude(framework, activeSession.messages, getEnabledSkillsContext(skills));
     const systemMsg: Message = {
       id: generateId(),
       role: Role.MODEL,
@@ -249,15 +203,15 @@ export default function App() {
     setSkills(newSkills);
     storage.saveSkills(newSkills);
     if (activeSession) {
-      initializeChatWithProvider(activeSession.framework, activeSession.messages, getEnabledSkillsContext(newSkills));
+      initializeClaude(activeSession.framework, activeSession.messages, getEnabledSkillsContext(newSkills));
     }
   };
 
-  const handleLLMSettingsChange = (newSettings: LLMSettings) => {
-    setLLMSettings(newSettings);
-    storage.saveLLMSettings(newSettings);
+  const handleClaudeSettingsChange = (newSettings: ClaudeSettings) => {
+    setClaudeSettings(newSettings);
+    storage.saveClaudeSettings(newSettings);
     if (activeSession) {
-      initializeChatWithProvider(activeSession.framework, activeSession.messages, getEnabledSkillsContext(skills), newSettings);
+      initializeClaude(activeSession.framework, activeSession.messages, getEnabledSkillsContext(skills), newSettings);
     }
   };
   
@@ -296,8 +250,8 @@ export default function App() {
         return;
       }
 
-      // Ensure chat is initialized with current provider before sending
-      initializeChatWithProvider(
+      // Ensure chat is initialized before sending
+      initializeClaude(
         currentSession.framework,
         currentSession.messages,
         getEnabledSkillsContext(skills)
@@ -325,7 +279,7 @@ export default function App() {
 
         let accumulatedText = "";
         
-        await sendMessageWithProvider(promptText, (streamedText) => {
+        await sendClaudeMessageStream(promptText, (streamedText) => {
             accumulatedText = streamedText;
             setSessions(prev => prev.map(session => {
             if (session.id === sessionId) {
@@ -536,8 +490,8 @@ export default function App() {
         onFrameworkChange={handleFrameworkChange}
         currentTheme={theme}
         onThemeChange={handleThemeChange}
-        llmSettings={llmSettings}
-        onLLMSettingsChange={handleLLMSettingsChange}
+        claudeSettings={claudeSettings}
+        onClaudeSettingsChange={handleClaudeSettingsChange}
       />
       
       <SkillsModal
@@ -565,6 +519,34 @@ export default function App() {
                <Logo size={28} />
                <h1 className="font-normal text-xl tracking-tight hidden sm:block">VibeCoder</h1>
             </div>
+            
+            {/* View Mode Toggle */}
+            <div className="hidden sm:flex items-center bg-md-sys-color-surface-container rounded-full p-1 border border-md-sys-color-outline-variant/30">
+              <button
+                onClick={() => setViewMode('canvas')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
+                  viewMode === 'canvas' 
+                    ? 'bg-md-sys-color-primary text-md-sys-color-on-primary' 
+                    : 'text-md-sys-color-on-surface-variant hover:text-md-sys-color-on-surface'
+                }`}
+                title="Infinite Canvas"
+              >
+                <LayoutGrid size={16} />
+                Canvas
+              </button>
+              <button
+                onClick={() => setViewMode('chat')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
+                  viewMode === 'chat' 
+                    ? 'bg-md-sys-color-primary text-md-sys-color-on-primary' 
+                    : 'text-md-sys-color-on-surface-variant hover:text-md-sys-color-on-surface'
+                }`}
+                title="Chat + Preview"
+              >
+                <MessageSquare size={16} />
+                Chat
+              </button>
+            </div>
           </div>
           
           <div className="flex items-center gap-2">
@@ -580,6 +562,15 @@ export default function App() {
           </div>
         </header>
 
+        {/* Canvas Mode */}
+        {viewMode === 'canvas' ? (
+          <InfiniteCanvas
+            theme={theme}
+            initialItems={canvasItems}
+            onItemsChange={setCanvasItems}
+          />
+        ) : (
+        /* Chat Mode */
         <div className="flex-1 flex overflow-hidden">
            <div className={`flex flex-col w-full md:w-1/2 lg:w-[45%] h-full ${activeSession?.codeVersions.length ? 'hidden md:flex' : 'flex'} border-r border-md-sys-color-outline-variant/20`}>
               <div className="flex-1 overflow-y-auto custom-scrollbar scroll-smooth p-2">
@@ -633,6 +624,7 @@ export default function App() {
               />
            </div>
         </div>
+        )}
       </div>
     </div>
   );

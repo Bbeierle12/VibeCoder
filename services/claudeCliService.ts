@@ -1,32 +1,23 @@
 
-import { Message, Role, StyleFramework } from '../types';
+import { Message, Role, StyleFramework, ClaudeSettings } from '../types';
 import { getSystemInstruction } from '../constants';
-
-interface ClaudeCliConfig {
-  serverUrl: string;
-  model: string;
-}
 
 interface ClaudeMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
 }
 
-let currentConfig: ClaudeCliConfig | null = null;
+let currentConfig: ClaudeSettings | null = null;
 let conversationHistory: ClaudeMessage[] = [];
 
 export const CLAUDE_MODELS = [
-  { name: 'Claude Opus 4.5', value: 'claude-opus-4-5-20250514', description: 'Most intelligent, highest quality' },
-  { name: 'Claude Sonnet 4.5', value: 'claude-sonnet-4-5-20250514', description: 'Latest balanced model' },
-  { name: 'Claude Sonnet 4', value: 'claude-sonnet-4-20250514', description: 'Fast and capable' },
-  { name: 'Claude Opus 4', value: 'claude-opus-4-20250514', description: 'High capability' },
-  { name: 'Claude 3.5 Sonnet', value: 'claude-3-5-sonnet-20241022', description: 'Great for coding tasks' },
-  { name: 'Claude 3.5 Haiku', value: 'claude-3-5-haiku-20241022', description: 'Fast and efficient' },
-  { name: 'Claude 3.5 Opus', value: 'claude-3-5-opus-20240229', description: 'Previous generation flagship' },
+  { name: 'Claude Opus 4.5', value: 'opus', description: 'Most intelligent, highest quality' },
+  { name: 'Claude Sonnet 4.5', value: 'sonnet', description: 'Latest balanced model' },
+  { name: 'Claude Haiku 3.5', value: 'haiku', description: 'Fast and efficient' },
 ];
 
 export const initializeClaudeChat = (
-  config: ClaudeCliConfig,
+  config: ClaudeSettings,
   framework: StyleFramework = 'tailwind',
   history: Message[] = [],
   skills: string = ''
@@ -137,7 +128,7 @@ export const sendClaudeMessageStream = async (
   return fullResponse;
 };
 
-export const testClaudeConnection = async (config: ClaudeCliConfig): Promise<{ success: boolean; error?: string }> => {
+export const testClaudeConnection = async (config: ClaudeSettings): Promise<{ success: boolean; error?: string }> => {
   try {
     const response = await fetch(`${config.serverUrl}/v1/models`, {
       method: 'GET',
@@ -159,7 +150,7 @@ export const testClaudeConnection = async (config: ClaudeCliConfig): Promise<{ s
   }
 };
 
-export const getDefaultClaudeConfig = (): ClaudeCliConfig => ({
+export const getDefaultClaudeSettings = (): ClaudeSettings => ({
   serverUrl: 'http://localhost:3456',
-  model: 'claude-opus-4-5-20250514'
+  model: 'sonnet'
 });

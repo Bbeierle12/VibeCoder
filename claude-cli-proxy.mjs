@@ -24,6 +24,15 @@ import * as http from 'http';
 
 const PORT = parseInt(process.env.PORT || '3456', 10);
 
+// Model aliases - the CLI accepts these directly
+const VALID_MODELS = ['opus', 'sonnet', 'haiku'];
+
+// Escape string for Windows shell
+function escapeShellArg(arg) {
+  // Replace double quotes with escaped quotes and wrap in quotes
+  return `"${arg.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`;
+}
+
 // CORS headers for browser access
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -66,20 +75,23 @@ async function handleChatCompletion(req, res) {
       }
 
       // Build claude command arguments
+      // Use model alias directly (opus, sonnet, haiku)
       const args = [
+        '-p',  // Print mode (non-interactive)
         '--model', model,
-        '--print',  // Print response to stdout
+        '--dangerously-skip-permissions',  // Skip trust dialogs
       ];
 
       if (systemPrompt) {
-        args.push('--system-prompt', systemPrompt);
+        args.push('--system-prompt', escapeShellArg(systemPrompt));
       }
 
       // Add the prompt
-      args.push(lastUserMessage.content);
+      args.push(escapeShellArg(lastUserMessage.content));
 
       console.log(`[Claude CLI] Model: ${model}`);
       console.log(`[Claude CLI] Prompt: ${lastUserMessage.content.substring(0, 100)}...`);
+      console.log(`[Claude CLI] Command: claude ${args.join(' ')}`);
 
       if (stream) {
         res.writeHead(200, {
@@ -193,13 +205,9 @@ function handleModels(res) {
   res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
     data: [
-      { id: 'claude-opus-4-5-20250514', object: 'model' },
-      { id: 'claude-sonnet-4-5-20250514', object: 'model' },
-      { id: 'claude-sonnet-4-20250514', object: 'model' },
-      { id: 'claude-opus-4-20250514', object: 'model' },
-      { id: 'claude-3-5-sonnet-20241022', object: 'model' },
-      { id: 'claude-3-5-haiku-20241022', object: 'model' },
-      { id: 'claude-3-5-opus-20240229', object: 'model' },
+      { id: 'opus', object: 'model' },
+      { id: 'sonnet', object: 'model' },
+      { id: 'haiku', object: 'model' },
     ]
   }));
 }

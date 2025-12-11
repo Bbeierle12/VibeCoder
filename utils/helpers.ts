@@ -25,3 +25,32 @@ export const extractHtmlCode = (markdown: string): string | null => {
 export const generateId = (): string => {
   return Math.random().toString(36).substring(2, 9);
 };
+
+/**
+ * Apply theme class to document body
+ */
+export const applyThemeToBody = (theme: 'light' | 'dark' | 'cyberpunk'): void => {
+  document.body.classList.remove('dark', 'cyberpunk');
+  if (theme === 'dark') {
+    document.body.classList.add('dark');
+  } else if (theme === 'cyberpunk') {
+    document.body.classList.add('cyberpunk');
+  }
+};
+
+/**
+ * Clean up draft localStorage entries for deleted sessions
+ */
+export const cleanupDrafts = (existingSessionIds: string[]): void => {
+  const keysToRemove: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key?.startsWith('vibecoder_draft_')) {
+      const sessionId = key.replace('vibecoder_draft_', '');
+      if (!existingSessionIds.includes(sessionId)) {
+        keysToRemove.push(key);
+      }
+    }
+  }
+  keysToRemove.forEach(key => localStorage.removeItem(key));
+};

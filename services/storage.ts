@@ -1,5 +1,5 @@
 
-import { User, ChatSession, Skill, Theme, ProjectTemplate, LLMSettings } from '../types';
+import { User, ChatSession, Skill, Theme, ProjectTemplate, ClaudeSettings } from '../types';
 import { DEFAULT_TEST_CODE, DEFAULT_PROJECT_TEMPLATES } from '../constants';
 
 const STORAGE_KEYS = {
@@ -8,20 +8,12 @@ const STORAGE_KEYS = {
   SKILLS: 'vibecoder_skills',
   THEME: 'vibecoder_theme',
   TEMPLATES: 'vibecoder_templates',
-  LLM_SETTINGS: 'vibecoder_llm_settings'
+  CLAUDE_SETTINGS: 'vibecoder_claude_settings'
 };
 
-const DEFAULT_LLM_SETTINGS: LLMSettings = {
-  provider: 'gemini',
-  localConfig: {
-    endpoint: 'http://localhost:11434',
-    modelName: 'llama3.2',
-    provider: 'ollama'
-  },
-  claudeCliConfig: {
-    serverUrl: 'http://localhost:3456',
-    model: 'claude-sonnet-4-20250514'
-  }
+const DEFAULT_CLAUDE_SETTINGS: ClaudeSettings = {
+  serverUrl: 'http://localhost:3456',
+  model: 'sonnet'
 };
 
 const DEFAULT_SKILLS: Skill[] = [
@@ -111,7 +103,10 @@ export const storage = {
   getTheme: (): Theme => {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.THEME);
-      return (data === 'light' || data === 'dark') ? data : 'dark';
+      if (data === 'light' || data === 'dark' || data === 'cyberpunk') {
+        return data;
+      }
+      return 'dark';
     } catch (e) {
       return 'dark';
     }
@@ -134,16 +129,16 @@ export const storage = {
     localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(templates));
   },
 
-  getLLMSettings: (): LLMSettings => {
+  getClaudeSettings: (): ClaudeSettings => {
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.LLM_SETTINGS);
-      return data ? JSON.parse(data) : DEFAULT_LLM_SETTINGS;
+      const data = localStorage.getItem(STORAGE_KEYS.CLAUDE_SETTINGS);
+      return data ? JSON.parse(data) : DEFAULT_CLAUDE_SETTINGS;
     } catch (e) {
-      return DEFAULT_LLM_SETTINGS;
+      return DEFAULT_CLAUDE_SETTINGS;
     }
   },
 
-  saveLLMSettings: (settings: LLMSettings) => {
-    localStorage.setItem(STORAGE_KEYS.LLM_SETTINGS, JSON.stringify(settings));
+  saveClaudeSettings: (settings: ClaudeSettings) => {
+    localStorage.setItem(STORAGE_KEYS.CLAUDE_SETTINGS, JSON.stringify(settings));
   }
 };

@@ -566,7 +566,7 @@ export const CodePreview: React.FC<CodePreviewProps> = ({
                         <div className="h-40 bg-[#1e1e1e] border-t border-[#333] flex flex-col animate-in slide-in-from-bottom-5">
                             <div className="px-4 py-1 bg-[#252526] text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center justify-between">
                                 <span>Problems</span>
-                                <button onClick={() => setIsProblemsOpen(false)} className="hover:text-white">
+                                <button onClick={() => setIsProblemsOpen(false)} className="hover:text-white" title="Close problems panel" aria-label="Close problems panel">
                                     <X size={14} />
                                 </button>
                             </div>

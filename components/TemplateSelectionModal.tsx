@@ -201,6 +201,8 @@ export const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
                                type="button"
                                key={iconName}
                                onClick={() => setNewIcon(iconName)}
+                               title={`Select ${iconName} icon`}
+                               aria-label={`Select ${iconName} icon`}
                                className={clsx(
                                   "p-3 rounded-xl flex items-center justify-center transition-all",
                                   newIcon === iconName 

@@ -142,6 +142,8 @@ export const SkillsModal: React.FC<SkillsModalProps> = ({
                     {/* Toggle Switch */}
                     <button 
                         onClick={() => handleToggle(skill.id)}
+                        aria-label={`Toggle ${skill.name} skill`}
+                        title={skill.isEnabled ? 'Disable skill' : 'Enable skill'}
                         className={clsx(
                             "mt-1 w-10 h-6 rounded-full relative transition-colors duration-200 focus:outline-none",
                             skill.isEnabled ? "bg-md-sys-color-primary" : "bg-md-sys-color-surface-container-highest"

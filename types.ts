@@ -45,23 +45,9 @@ export type StyleFramework = 'tailwind' | 'material-ui' | 'chakra-ui' | 'bootstr
 
 export type Theme = 'light' | 'dark' | 'cyberpunk';
 
-export type LLMProvider = 'gemini' | 'local' | 'claude-cli';
-
-export interface LocalLLMConfig {
-  endpoint: string;
-  modelName: string;
-  provider: 'ollama' | 'lmstudio' | 'custom';
-}
-
-export interface ClaudeCliConfig {
+export interface ClaudeSettings {
   serverUrl: string;
-  model: string;
-}
-
-export interface LLMSettings {
-  provider: LLMProvider;
-  localConfig: LocalLLMConfig;
-  claudeCliConfig: ClaudeCliConfig;
+  model: 'opus' | 'sonnet' | 'haiku';
 }
 
 export interface ChatSession {
