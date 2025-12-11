@@ -481,6 +481,11 @@ export default function App() {
         onDeleteSession={handleDeleteSession}
         isOpen={isHistoryOpen}
         onClose={() => setIsHistoryOpen(false)}
+        messages={messages}
+        inputValue={inputValue}
+        isThinking={isThinking}
+        onSendMessage={handleSendMessage}
+        onInputChange={setInputValue}
       />
 
       <SettingsModal 
