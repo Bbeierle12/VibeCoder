@@ -396,40 +396,39 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
     }));
   }, []);
 
-  // Render grid pattern
-  const gridPattern = useMemo(() => {
-    const scaledGridSize = gridSize * viewport.zoom;
-    const majorGridSize = scaledGridSize * 5;
+  // Generate grid dots that are part of the canvas coordinate system
+  const generateGridDots = useCallback(() => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return [];
     
-    return (
-      <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ overflow: 'visible' }}>
-        <defs>
-          <pattern
-            id="smallGrid"
-            width={scaledGridSize}
-            height={scaledGridSize}
-            patternUnits="userSpaceOnUse"
-            x={viewport.offset.x % scaledGridSize}
-            y={viewport.offset.y % scaledGridSize}
-          >
-            <circle cx={scaledGridSize / 2} cy={scaledGridSize / 2} r={1} fill={gridColors.dots} />
-          </pattern>
-          <pattern
-            id="majorGrid"
-            width={majorGridSize}
-            height={majorGridSize}
-            patternUnits="userSpaceOnUse"
-            x={viewport.offset.x % majorGridSize}
-            y={viewport.offset.y % majorGridSize}
-          >
-            <circle cx={majorGridSize / 2} cy={majorGridSize / 2} r={1.5} fill={gridColors.majorLines} />
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#smallGrid)" />
-        <rect width="100%" height="100%" fill="url(#majorGrid)" />
-      </svg>
-    );
-  }, [gridSize, viewport, gridColors]);
+    // Calculate visible area in canvas coordinates
+    const visibleLeft = -viewport.offset.x / viewport.zoom;
+    const visibleTop = -viewport.offset.y / viewport.zoom;
+    const visibleRight = visibleLeft + rect.width / viewport.zoom;
+    const visibleBottom = visibleTop + rect.height / viewport.zoom;
+    
+    // Add padding to render dots just outside the viewport for smooth scrolling
+    const padding = gridSize * 5;
+    const startX = Math.floor((visibleLeft - padding) / gridSize) * gridSize;
+    const startY = Math.floor((visibleTop - padding) / gridSize) * gridSize;
+    const endX = Math.ceil((visibleRight + padding) / gridSize) * gridSize;
+    const endY = Math.ceil((visibleBottom + padding) / gridSize) * gridSize;
+    
+    const dots: { x: number; y: number; isMajor: boolean }[] = [];
+    const majorInterval = gridSize * 5;
+    
+    for (let x = startX; x <= endX; x += gridSize) {
+      for (let y = startY; y <= endY; y += gridSize) {
+        const isMajor = x % majorInterval === 0 && y % majorInterval === 0;
+        dots.push({ x, y, isMajor });
+      }
+    }
+    
+    return dots;
+  }, [viewport, gridSize]);
+
+  // Memoize the grid dots
+  const gridDots = useMemo(() => generateGridDots(), [generateGridDots]);
 
   return (
     <div className="relative flex flex-col h-full w-full bg-md-sys-color-surface overflow-hidden">
@@ -561,17 +560,39 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       >
-        {/* Grid */}
-        {showGrid && gridPattern}
-        
-        {/* Items layer */}
+        {/* Transformed layer - grid and items move together */}
         <div
-          className="absolute inset-0 pointer-events-none"
+          className="absolute inset-0"
           style={{
             transform: `translate(${viewport.offset.x}px, ${viewport.offset.y}px) scale(${viewport.zoom})`,
             transformOrigin: '0 0',
           }}
         >
+          {/* Grid dots - rendered in canvas coordinates */}
+          {showGrid && (
+            <svg 
+              className="absolute pointer-events-none" 
+              style={{ 
+                left: 0, 
+                top: 0, 
+                width: '100%', 
+                height: '100%',
+                overflow: 'visible' 
+              }}
+            >
+              {gridDots.map((dot, i) => (
+                <circle
+                  key={`${dot.x}-${dot.y}`}
+                  cx={dot.x}
+                  cy={dot.y}
+                  r={dot.isMajor ? 2 : 1}
+                  fill={dot.isMajor ? gridColors.majorLines : gridColors.dots}
+                />
+              ))}
+            </svg>
+          )}
+          
+          {/* Items */}
           {items.map(item => (
             <CanvasItem
               key={item.id}
