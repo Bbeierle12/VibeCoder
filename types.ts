@@ -45,9 +45,22 @@ export type StyleFramework = 'tailwind' | 'material-ui' | 'chakra-ui' | 'bootstr
 
 export type Theme = 'light' | 'dark' | 'cyberpunk';
 
+export type AIProvider = 'claude' | 'ollama';
+
 export interface ClaudeSettings {
   serverUrl: string;
   model: 'opus' | 'sonnet' | 'haiku';
+}
+
+export interface OllamaSettings {
+  serverUrl: string;
+  model: string;
+}
+
+export interface AISettings {
+  provider: AIProvider;
+  claude: ClaudeSettings;
+  ollama: OllamaSettings;
 }
 
 export interface ChatSession {

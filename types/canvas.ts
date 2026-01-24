@@ -25,12 +25,41 @@ export interface CanvasItemData {
   locked?: boolean;
   zIndex?: number;
   metadata?: Record<string, any>;
+  // Mindmap connection fields
+  sourceMessageId?: string;   // ID of the chat message that generated this item
+  parentItemId?: string;      // ID of the parent item (for branching/refinements)
+}
+
+// Chat node displayed on canvas (represents a chat message)
+export interface ChatNodeData {
+  id: string;
+  messageId: string;          // Reference to the Message.id
+  role: 'user' | 'model';
+  content: string;            // Truncated message preview
+  fullContent: string;        // Full message content
+  position: Point;
+  timestamp: number;
+  isCollapsed?: boolean;
+}
+
+// Connection between nodes (chat->item or item->item)
+export interface CanvasConnection {
+  id: string;
+  fromId: string;             // ChatNodeData.id or CanvasItemData.id
+  fromType: 'chat' | 'item';
+  toId: string;               // CanvasItemData.id
+  toType: 'item';
+  connectionType: 'generated' | 'refined' | 'branched';
+  color?: string;
 }
 
 export interface CanvasState {
   items: CanvasItemData[];
+  chatNodes: ChatNodeData[];
+  connections: CanvasConnection[];
   viewport: Viewport;
   selectedItemId: string | null;
+  selectedChatNodeId: string | null;
   gridSize: number;   // Pixels per grid unit
   showGrid: boolean;
   snapToGrid: boolean;
@@ -47,8 +76,11 @@ export interface DragState {
 
 export const DEFAULT_CANVAS_STATE: CanvasState = {
   items: [],
+  chatNodes: [],
+  connections: [],
   viewport: { offset: { x: 0, y: 0 }, zoom: 1 },
   selectedItemId: null,
+  selectedChatNodeId: null,
   gridSize: 20,
   showGrid: true,
   snapToGrid: true,

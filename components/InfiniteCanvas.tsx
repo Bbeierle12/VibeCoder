@@ -1,36 +1,50 @@
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { clsx } from 'clsx';
-import { 
-  ZoomIn, ZoomOut, Maximize2, Grid3X3, Lock, Unlock, 
+import {
+  ZoomIn, ZoomOut, Maximize2, Grid3X3, Lock, Unlock,
   Plus, MousePointer2, Hand, Trash2, Copy, RotateCcw,
-  Layers, Eye, EyeOff
+  Layers, Eye, EyeOff, GitBranch
 } from 'lucide-react';
 import { Button } from './Button';
-import { 
-  CanvasState, CanvasItemData, Viewport, Point, DragState,
-  DEFAULT_CANVAS_STATE, ZOOM_LIMITS, GRID_COLORS 
+import {
+  CanvasState, CanvasItemData, ChatNodeData, CanvasConnection, Viewport, Point, DragState,
+  DEFAULT_CANVAS_STATE, ZOOM_LIMITS, GRID_COLORS
 } from '../types/canvas';
 import { CanvasItem } from './CanvasItem';
+import { ChatNode } from './ChatNode';
+import { CanvasConnections } from './CanvasConnections';
 import { generateId } from '../utils/helpers';
 import { Theme } from '../types';
 
 interface InfiniteCanvasProps {
   theme: Theme;
   initialItems?: CanvasItemData[];
+  chatNodes?: ChatNodeData[];
+  connections?: CanvasConnection[];
   onItemsChange?: (items: CanvasItemData[]) => void;
+  onChatNodesChange?: (nodes: ChatNodeData[]) => void;
+  onConnectionsChange?: (connections: CanvasConnection[]) => void;
   onAddGeneratedCode?: (code: string, position: Point) => void;
+  showConnections?: boolean;
 }
 
 export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
   theme = 'dark',
   initialItems = [],
+  chatNodes: externalChatNodes = [],
+  connections: externalConnections = [],
   onItemsChange,
+  onChatNodesChange,
+  onConnectionsChange,
   onAddGeneratedCode,
+  showConnections = true,
 }) => {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [canvasState, setCanvasState] = useState<CanvasState>({
     ...DEFAULT_CANVAS_STATE,
     items: initialItems,
+    chatNodes: externalChatNodes,
+    connections: externalConnections,
   });
   
   const [dragState, setDragState] = useState<DragState>({
@@ -44,10 +58,19 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
   const [tool, setTool] = useState<'select' | 'pan'>('select');
   const [isPanning, setIsPanning] = useState(false);
 
-  const { viewport, items, selectedItemId, gridSize, showGrid, snapToGrid } = canvasState;
+  const { viewport, items, chatNodes, connections, selectedItemId, selectedChatNodeId, gridSize, showGrid, snapToGrid } = canvasState;
 
   // Get grid colors based on theme
   const gridColors = GRID_COLORS[theme] || GRID_COLORS.dark;
+
+  // Sync external chatNodes and connections
+  useEffect(() => {
+    setCanvasState(prev => ({
+      ...prev,
+      chatNodes: externalChatNodes,
+      connections: externalConnections,
+    }));
+  }, [externalChatNodes, externalConnections]);
 
   // Convert screen coordinates to canvas coordinates
   const screenToCanvas = useCallback((screenX: number, screenY: number): Point => {
@@ -167,7 +190,7 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
       
       // Deselect if clicking on empty canvas
       if (!itemElement) {
-        setCanvasState(prev => ({ ...prev, selectedItemId: null }));
+        setCanvasState(prev => ({ ...prev, selectedItemId: null, selectedChatNodeId: null }));
       }
     }
   }, [tool, items, screenToCanvas]);
@@ -592,13 +615,42 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
             </svg>
           )}
           
+          {/* Connection lines */}
+          {showConnections && connections.length > 0 && (
+            <CanvasConnections
+              connections={connections}
+              chatNodes={chatNodes}
+              items={items}
+              theme={theme}
+            />
+          )}
+
+          {/* Chat nodes */}
+          {chatNodes.map(node => (
+            <ChatNode
+              key={node.id}
+              node={node}
+              isSelected={node.id === selectedChatNodeId}
+              onSelect={() => setCanvasState(prev => ({
+                ...prev,
+                selectedChatNodeId: node.id,
+                selectedItemId: null,
+              }))}
+              zoom={viewport.zoom}
+            />
+          ))}
+
           {/* Items */}
           {items.map(item => (
             <CanvasItem
               key={item.id}
               item={item}
               isSelected={item.id === selectedItemId}
-              onSelect={() => setCanvasState(prev => ({ ...prev, selectedItemId: item.id }))}
+              onSelect={() => setCanvasState(prev => ({
+                ...prev,
+                selectedItemId: item.id,
+                selectedChatNodeId: null,
+              }))}
               onContentChange={(content) => updateItemContent(item.id, content)}
               onSizeChange={(size) => updateItemSize(item.id, size)}
               zoom={viewport.zoom}

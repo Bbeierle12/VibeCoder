@@ -1,13 +1,12 @@
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Menu, Settings, BrainCircuit, LayoutGrid, MessageSquare } from 'lucide-react';
-import { Message, Role, User, ChatSession, CodeVersion, StyleFramework, Skill, Theme, ProjectTemplate, ClaudeSettings } from './types';
-import { CanvasItemData } from './types/canvas';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Menu, Settings, BrainCircuit } from 'lucide-react';
+import { Message, Role, User, ChatSession, CodeVersion, StyleFramework, Skill, Theme, ProjectTemplate, ClaudeSettings, OllamaSettings, AIProvider } from './types';
+import { CanvasItemData, ChatNodeData, CanvasConnection, Point } from './types/canvas';
 import { sendClaudeMessageStream, initializeClaudeChat } from './services/claudeCliService';
+import { sendOllamaMessageStream, initializeOllamaChat } from './services/ollamaService';
 import { storage } from './services/storage';
 import { extractHtmlCode, generateId, applyThemeToBody, cleanupDrafts } from './utils/helpers';
-import { ChatMessage } from './components/ChatMessage';
-import { CodePreview } from './components/CodePreview';
 import { InfiniteCanvas } from './components/InfiniteCanvas';
 import { Button } from './components/Button';
 import { AuthModal } from './components/AuthModal';
@@ -21,7 +20,6 @@ import { DEFAULT_TEST_CODE, DEFAULT_PROJECT_TEMPLATES } from './constants';
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [theme, setTheme] = useState<Theme>('dark');
-  const [viewMode, setViewMode] = useState<'chat' | 'canvas'>('canvas'); // Default to canvas!
   const [isHistoryOpen, setIsHistoryOpen] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSkillsOpen, setIsSkillsOpen] = useState(false);
@@ -30,13 +28,14 @@ export default function App() {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [inputValue, setInputValue] = useState('');
   const [isThinking, setIsThinking] = useState(false);
   const [claudeSettings, setClaudeSettings] = useState<ClaudeSettings>(storage.getClaudeSettings());
+  const [ollamaSettings, setOllamaSettings] = useState<OllamaSettings>(storage.getOllamaSettings());
+  const [aiProvider, setAIProvider] = useState<AIProvider>(storage.getAIProvider());
   const [canvasItems, setCanvasItems] = useState<CanvasItemData[]>([]);
+  const [chatNodes, setChatNodes] = useState<ChatNodeData[]>([]);
+  const [connections, setConnections] = useState<CanvasConnection[]>([]);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Apply theme class to body
   useEffect(() => {
@@ -59,15 +58,103 @@ export default function App() {
       .join('\n\n');
   }, []);
 
-  // Helper to initialize Claude chat
-  const initializeClaude = useCallback((
+  // Helper to calculate next position for mindmap flow layout
+  const getNextFlowPosition = useCallback((
+    existingChatNodes: ChatNodeData[],
+    existingItems: CanvasItemData[],
+    parentItemId?: string
+  ): { chatPos: Point; itemPos: Point } => {
+    const CHAT_WIDTH = 280;
+    const CHAT_HEIGHT = 100;
+    const ITEM_WIDTH = 400;
+    const ITEM_HEIGHT = 300;
+    const HORIZONTAL_GAP = 100;
+    const VERTICAL_GAP = 150;
+    const START_X = 100;
+    const START_Y = 100;
+
+    // If there's a parent item, position to the right of it (branching)
+    if (parentItemId) {
+      const parentItem = existingItems.find(i => i.id === parentItemId);
+      if (parentItem) {
+        // Find siblings (items with same parent)
+        const siblings = existingItems.filter(i => i.parentItemId === parentItemId);
+        const siblingOffset = siblings.length * (ITEM_HEIGHT + VERTICAL_GAP / 2);
+
+        return {
+          chatPos: {
+            x: parentItem.position.x + parentItem.size.width + HORIZONTAL_GAP,
+            y: parentItem.position.y + siblingOffset,
+          },
+          itemPos: {
+            x: parentItem.position.x + parentItem.size.width + HORIZONTAL_GAP,
+            y: parentItem.position.y + CHAT_HEIGHT + VERTICAL_GAP / 2 + siblingOffset,
+          },
+        };
+      }
+    }
+
+    // No parent - add to the bottom of the flow
+    if (existingItems.length === 0 && existingChatNodes.length === 0) {
+      return {
+        chatPos: { x: START_X, y: START_Y },
+        itemPos: { x: START_X, y: START_Y + CHAT_HEIGHT + VERTICAL_GAP / 2 },
+      };
+    }
+
+    // Find the bottommost element
+    let maxY = 0;
+    let lastX = START_X;
+
+    existingChatNodes.forEach(node => {
+      const bottom = node.position.y + CHAT_HEIGHT;
+      if (bottom > maxY) {
+        maxY = bottom;
+        lastX = node.position.x;
+      }
+    });
+
+    existingItems.forEach(item => {
+      const bottom = item.position.y + item.size.height;
+      if (bottom > maxY) {
+        maxY = bottom;
+        lastX = item.position.x;
+      }
+    });
+
+    return {
+      chatPos: { x: lastX, y: maxY + VERTICAL_GAP },
+      itemPos: { x: lastX, y: maxY + VERTICAL_GAP + CHAT_HEIGHT + VERTICAL_GAP / 2 },
+    };
+  }, []);
+
+  // Helper to initialize chat for the active provider
+  const initializeChat = useCallback((
     framework: StyleFramework,
     history: Message[],
     skillsContext: string,
-    settings: ClaudeSettings = claudeSettings
+    provider: AIProvider = aiProvider,
+    claude: ClaudeSettings = claudeSettings,
+    ollama: OllamaSettings = ollamaSettings
   ) => {
-    initializeClaudeChat(settings, framework, history, skillsContext);
-  }, [claudeSettings]);
+    if (provider === 'ollama') {
+      initializeOllamaChat(ollama, framework, history, skillsContext);
+    } else {
+      initializeClaudeChat(claude, framework, history, skillsContext);
+    }
+  }, [aiProvider, claudeSettings, ollamaSettings]);
+
+  // Helper to send message based on active provider
+  const sendMessageStream = useCallback(async (
+    content: string,
+    onChunk: (text: string) => void
+  ): Promise<string> => {
+    if (aiProvider === 'ollama') {
+      return sendOllamaMessageStream(content, onChunk);
+    } else {
+      return sendClaudeMessageStream(content, onChunk);
+    }
+  }, [aiProvider]);
 
   const createNewSession = useCallback((templateId: string = 'blank', currentSkills = skills) => {
     // Look up in dynamic templates, fallback to defaults just in case
@@ -108,12 +195,12 @@ export default function App() {
     setSessions(prev => [newSession, ...prev]);
     setActiveSessionId(newSession.id);
     storage.saveSession(newSession);
-    initializeClaude(newSession.framework, newSession.messages, getEnabledSkillsContext(currentSkills));
+    initializeChat(newSession.framework, newSession.messages, getEnabledSkillsContext(currentSkills));
     
     if (window.innerWidth < 768) setIsHistoryOpen(false);
     
     return newSession;
-  }, [skills, templates, getEnabledSkillsContext, initializeClaude]);
+  }, [skills, templates, getEnabledSkillsContext, initializeChat]);
 
   useEffect(() => {
     const loadedUser = storage.getUser();
@@ -131,17 +218,32 @@ export default function App() {
     const loadedClaudeSettings = storage.getClaudeSettings();
     setClaudeSettings(loadedClaudeSettings);
 
+    const loadedOllamaSettings = storage.getOllamaSettings();
+    setOllamaSettings(loadedOllamaSettings);
+
+    const loadedAIProvider = storage.getAIProvider();
+    setAIProvider(loadedAIProvider);
+
     // Clean up orphaned drafts from deleted sessions
     cleanupDrafts(loadedSessions.map(s => s.id));
 
     if (loadedSessions.length > 0) {
       setActiveSessionId(loadedSessions[0].id);
-      initializeClaudeChat(
-        loadedClaudeSettings,
-        loadedSessions[0].framework,
-        loadedSessions[0].messages,
-        getEnabledSkillsContext(loadedSkills)
-      );
+      if (loadedAIProvider === 'ollama') {
+        initializeOllamaChat(
+          loadedOllamaSettings,
+          loadedSessions[0].framework,
+          loadedSessions[0].messages,
+          getEnabledSkillsContext(loadedSkills)
+        );
+      } else {
+        initializeClaudeChat(
+          loadedClaudeSettings,
+          loadedSessions[0].framework,
+          loadedSessions[0].messages,
+          getEnabledSkillsContext(loadedSkills)
+        );
+      }
     } else {
       // Don't auto-create on load to avoid clutter, let user choose from template modal if they want
       // But if we truly have nothing, maybe prompt? For now, leave empty state.
@@ -155,19 +257,14 @@ export default function App() {
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
   const messages = activeSession ? activeSession.messages : [];
-  const currentVersionIndex = activeSession ? activeSession.currentVersionIndex : 0;
-  const versions = activeSession ? activeSession.codeVersions : [];
-  const currentCode = versions.length > 0 && versions[currentVersionIndex] ? versions[currentVersionIndex].code : null;
-  const testCode = activeSession?.testCode || DEFAULT_TEST_CODE;
 
   useEffect(() => {
     if (activeSession) {
-      initializeClaude(
+      initializeChat(
         activeSession.framework,
         activeSession.messages,
         getEnabledSkillsContext(skills)
       );
-      scrollToBottom();
     }
   }, [activeSessionId]);
 
@@ -186,7 +283,7 @@ export default function App() {
   const handleFrameworkChange = (framework: StyleFramework) => {
     if (!activeSession) return;
     updateActiveSession({ framework });
-    initializeClaude(framework, activeSession.messages, getEnabledSkillsContext(skills));
+    initializeChat(framework, activeSession.messages, getEnabledSkillsContext(skills));
     const systemMsg: Message = {
       id: generateId(),
       role: Role.MODEL,
@@ -203,15 +300,31 @@ export default function App() {
     setSkills(newSkills);
     storage.saveSkills(newSkills);
     if (activeSession) {
-      initializeClaude(activeSession.framework, activeSession.messages, getEnabledSkillsContext(newSkills));
+      initializeChat(activeSession.framework, activeSession.messages, getEnabledSkillsContext(newSkills));
     }
   };
 
   const handleClaudeSettingsChange = (newSettings: ClaudeSettings) => {
     setClaudeSettings(newSettings);
     storage.saveClaudeSettings(newSettings);
+    if (activeSession && aiProvider === 'claude') {
+      initializeChat(activeSession.framework, activeSession.messages, getEnabledSkillsContext(skills), 'claude', newSettings);
+    }
+  };
+
+  const handleOllamaSettingsChange = (newSettings: OllamaSettings) => {
+    setOllamaSettings(newSettings);
+    storage.saveOllamaSettings(newSettings);
+    if (activeSession && aiProvider === 'ollama') {
+      initializeChat(activeSession.framework, activeSession.messages, getEnabledSkillsContext(skills), 'ollama', claudeSettings, newSettings);
+    }
+  };
+
+  const handleAIProviderChange = (newProvider: AIProvider) => {
+    setAIProvider(newProvider);
+    storage.saveAIProvider(newProvider);
     if (activeSession) {
-      initializeClaude(activeSession.framework, activeSession.messages, getEnabledSkillsContext(skills), newSettings);
+      initializeChat(activeSession.framework, activeSession.messages, getEnabledSkillsContext(skills), newProvider);
     }
   };
   
@@ -219,14 +332,6 @@ export default function App() {
       setTemplates(newTemplates);
       storage.saveTemplates(newTemplates);
   };
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, isThinking]);
 
   // Handle template selection
   const handleTemplateSelect = (templateId: string) => {
@@ -251,7 +356,7 @@ export default function App() {
       }
 
       // Ensure chat is initialized before sending
-      initializeClaude(
+      initializeChat(
         currentSession.framework,
         currentSession.messages,
         getEnabledSkillsContext(skills)
@@ -279,7 +384,7 @@ export default function App() {
 
         let accumulatedText = "";
         
-        await sendClaudeMessageStream(promptText, (streamedText) => {
+        await sendMessageStream(promptText, (streamedText) => {
             accumulatedText = streamedText;
             setSessions(prev => prev.map(session => {
             if (session.id === sessionId) {
@@ -294,6 +399,11 @@ export default function App() {
 
         const extractedCode = extractHtmlCode(accumulatedText);
         if (extractedCode) {
+            // Find the user message that triggered this generation
+            const userMessage = currentSession.messages.find(
+              m => m.role === Role.USER && m.content === promptText
+            ) || currentSession.messages.filter(m => m.role === Role.USER).pop();
+
             setSessions(prev => prev.map(session => {
                 if (session.id === sessionId) {
                     const newVersion: CodeVersion = {
@@ -303,7 +413,7 @@ export default function App() {
                     };
                     const updatedSession = {
                         ...session,
-                        messages: session.messages.map(msg => 
+                        messages: session.messages.map(msg =>
                             msg.id === modelMessageId ? { ...msg, content: accumulatedText } : msg
                         ),
                         codeVersions: [...session.codeVersions, newVersion],
@@ -314,6 +424,50 @@ export default function App() {
                 }
                 return session;
             }));
+
+            // Create mindmap nodes for the canvas
+            if (userMessage) {
+              const positions = getNextFlowPosition(chatNodes, canvasItems);
+
+              // Create chat node for the user message
+              const chatNodeId = generateId();
+              const newChatNode: ChatNodeData = {
+                id: chatNodeId,
+                messageId: userMessage.id,
+                role: 'user',
+                content: promptText.length > 100 ? promptText.substring(0, 100) + '...' : promptText,
+                fullContent: promptText,
+                position: positions.chatPos,
+                timestamp: userMessage.timestamp,
+              };
+
+              // Create canvas item for the generated code
+              const canvasItemId = generateId();
+              const newCanvasItem: CanvasItemData = {
+                id: canvasItemId,
+                type: 'code-preview',
+                position: positions.itemPos,
+                size: { width: 400, height: 300 },
+                content: extractedCode,
+                title: promptText.length > 30 ? promptText.substring(0, 30) + '...' : promptText,
+                sourceMessageId: userMessage.id,
+              };
+
+              // Create connection between chat node and canvas item
+              const newConnection: CanvasConnection = {
+                id: generateId(),
+                fromId: chatNodeId,
+                fromType: 'chat',
+                toId: canvasItemId,
+                toType: 'item',
+                connectionType: 'generated',
+              };
+
+              // Update state
+              setChatNodes(prev => [...prev, newChatNode]);
+              setCanvasItems(prev => [...prev, newCanvasItem]);
+              setConnections(prev => [...prev, newConnection]);
+            }
         } else {
             setSessions(prev => {
                 const session = prev.find(s => s.id === sessionId);
@@ -344,13 +498,9 @@ export default function App() {
       }
   };
 
-  const handleSendMessage = async () => {
-    if (!inputValue.trim() || isThinking) return;
-    
-    const messageContent = inputValue.trim();
-    setInputValue('');
-    if (textareaRef.current) textareaRef.current.style.height = 'auto';
-    
+  const handleSendMessage = async (messageContent: string) => {
+    if (!messageContent.trim() || isThinking) return;
+
     // If no active session, create one first
     let currentSession: ChatSession | undefined;
     let sessionId = activeSessionId;
@@ -396,38 +546,6 @@ export default function App() {
     await triggerModelGeneration(sessionId, messageContent, updatedSession);
   };
 
-  const handleUndo = () => {
-    if (!activeSession || activeSession.currentVersionIndex <= 0) return;
-    updateActiveSession({ currentVersionIndex: activeSession.currentVersionIndex - 1 });
-  };
-
-  const handleRedo = () => {
-    if (!activeSession || activeSession.currentVersionIndex >= activeSession.codeVersions.length - 1) return;
-    updateActiveSession({ currentVersionIndex: activeSession.currentVersionIndex + 1 });
-  };
-
-  const handleCodeUpdate = (newCode: string) => {
-      if (!activeSession || activeSession.codeVersions.length === 0) return;
-      
-      setSessions(prev => prev.map(session => {
-        if (session.id === activeSessionId) {
-            const updatedVersions = [...session.codeVersions];
-            updatedVersions[session.currentVersionIndex] = {
-                ...updatedVersions[session.currentVersionIndex],
-                code: newCode
-            };
-            const updatedSession = { ...session, codeVersions: updatedVersions };
-            storage.saveSession(updatedSession);
-            return updatedSession;
-        }
-        return session;
-      }));
-  };
-  
-  const handleTestCodeUpdate = (newTestCode: string) => {
-    updateActiveSession({ testCode: newTestCode });
-  };
-
   const handleDeleteSession = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     storage.deleteSession(id);
@@ -453,19 +571,6 @@ export default function App() {
     setUser(null);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
-    }
-  };
-
-  const handleInputResize = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInputValue(e.target.value);
-    e.target.style.height = 'auto';
-    e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
-  };
-
   if (!user) return <AuthModal onLogin={handleLogin} />;
 
   return (
@@ -473,7 +578,7 @@ export default function App() {
       
       <div className="fixed inset-0 cyber-grid pointer-events-none z-0 opacity-20"></div>
 
-      <HistorySidebar 
+      <HistorySidebar
         sessions={sessions}
         currentSessionId={activeSessionId}
         onSelectSession={(id) => { setActiveSessionId(id); if (window.innerWidth < 768) setIsHistoryOpen(false); }}
@@ -482,10 +587,8 @@ export default function App() {
         isOpen={isHistoryOpen}
         onClose={() => setIsHistoryOpen(false)}
         messages={messages}
-        inputValue={inputValue}
         isThinking={isThinking}
         onSendMessage={handleSendMessage}
-        onInputChange={setInputValue}
       />
 
       <SettingsModal 
@@ -497,6 +600,10 @@ export default function App() {
         onThemeChange={handleThemeChange}
         claudeSettings={claudeSettings}
         onClaudeSettingsChange={handleClaudeSettingsChange}
+        ollamaSettings={ollamaSettings}
+        onOllamaSettingsChange={handleOllamaSettingsChange}
+        aiProvider={aiProvider}
+        onAIProviderChange={handleAIProviderChange}
       />
       
       <SkillsModal
@@ -525,33 +632,6 @@ export default function App() {
                <h1 className="font-normal text-xl tracking-tight hidden sm:block">VibeCoder</h1>
             </div>
             
-            {/* View Mode Toggle */}
-            <div className="hidden sm:flex items-center bg-md-sys-color-surface-container rounded-full p-1 border border-md-sys-color-outline-variant/30">
-              <button
-                onClick={() => setViewMode('canvas')}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                  viewMode === 'canvas' 
-                    ? 'bg-md-sys-color-primary text-md-sys-color-on-primary' 
-                    : 'text-md-sys-color-on-surface-variant hover:text-md-sys-color-on-surface'
-                }`}
-                title="Infinite Canvas"
-              >
-                <LayoutGrid size={16} />
-                Canvas
-              </button>
-              <button
-                onClick={() => setViewMode('chat')}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                  viewMode === 'chat' 
-                    ? 'bg-md-sys-color-primary text-md-sys-color-on-primary' 
-                    : 'text-md-sys-color-on-surface-variant hover:text-md-sys-color-on-surface'
-                }`}
-                title="Chat + Preview"
-              >
-                <MessageSquare size={16} />
-                Chat
-              </button>
-            </div>
           </div>
           
           <div className="flex items-center gap-2">
@@ -567,69 +647,17 @@ export default function App() {
           </div>
         </header>
 
-        {/* Canvas Mode */}
-        {viewMode === 'canvas' ? (
-          <InfiniteCanvas
-            theme={theme}
-            initialItems={canvasItems}
-            onItemsChange={setCanvasItems}
-          />
-        ) : (
-        /* Chat Mode */
-        <div className="flex-1 flex overflow-hidden">
-           <div className={`flex flex-col w-full md:w-1/2 lg:w-[45%] h-full ${activeSession?.codeVersions.length ? 'hidden md:flex' : 'flex'} border-r border-md-sys-color-outline-variant/20`}>
-              <div className="flex-1 overflow-y-auto custom-scrollbar scroll-smooth p-2">
-                  {messages.map((msg) => (
-                    <ChatMessage key={msg.id} message={msg} />
-                  ))}
-                  {isThinking && (
-                     <div className="flex items-center gap-3 px-6 py-4 opacity-70">
-                       <div className="w-2 h-2 bg-md-sys-color-primary rounded-full animate-bounce shadow-[0_0_10px_var(--md-sys-color-primary)]" />
-                       <div className="w-2 h-2 bg-md-sys-color-primary rounded-full animate-bounce delay-75 shadow-[0_0_10px_var(--md-sys-color-primary)]" />
-                       <div className="w-2 h-2 bg-md-sys-color-primary rounded-full animate-bounce delay-150 shadow-[0_0_10px_var(--md-sys-color-primary)]" />
-                     </div>
-                  )}
-                  <div ref={messagesEndRef} />
-              </div>
-
-              <div className="p-4 bg-md-sys-color-surface/50 backdrop-blur-md transition-colors duration-300">
-                <div className="relative flex items-end gap-2 p-1 bg-md-sys-color-surface-container-high/80 backdrop-blur rounded-[28px] border border-md-sys-color-outline-variant/30 focus-within:border-md-sys-color-primary focus-within:ring-1 focus-within:ring-md-sys-color-primary/50 transition-all shadow-lg">
-                  <textarea
-                    ref={textareaRef}
-                    value={inputValue}
-                    onChange={handleInputResize}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Describe your UI..."
-                    className="flex-1 max-h-[200px] min-h-[56px] w-full bg-transparent text-md-sys-color-on-surface placeholder:text-md-sys-color-on-surface-variant text-base px-6 py-4 focus:outline-none resize-none overflow-y-auto"
-                    rows={1}
-                  />
-                  <Button 
-                    onClick={handleSendMessage} 
-                    disabled={!inputValue.trim() || isThinking}
-                    variant="filled"
-                    className="mb-2 mr-2 w-10 h-10 min-w-[40px] min-h-[40px] p-0 shadow-md"
-                  >
-                    <Send size={20} />
-                  </Button>
-                </div>
-              </div>
-           </div>
-
-           <div className={`flex-1 flex-col h-full ${activeSession?.codeVersions.length ? 'flex' : 'hidden md:flex'}`}>
-              <CodePreview 
-                sessionId={activeSessionId || 'default'}
-                code={currentCode} 
-                testCode={testCode}
-                versions={versions}
-                currentVersionIndex={currentVersionIndex}
-                onUndo={handleUndo}
-                onRedo={handleRedo}
-                onCodeChange={handleCodeUpdate}
-                onTestCodeChange={handleTestCodeUpdate}
-              />
-           </div>
-        </div>
-        )}
+        {/* Infinite Canvas - unified chat + canvas experience */}
+        <InfiniteCanvas
+          theme={theme}
+          initialItems={canvasItems}
+          chatNodes={chatNodes}
+          connections={connections}
+          onItemsChange={setCanvasItems}
+          onChatNodesChange={setChatNodes}
+          onConnectionsChange={setConnections}
+          showConnections={true}
+        />
       </div>
     </div>
   );

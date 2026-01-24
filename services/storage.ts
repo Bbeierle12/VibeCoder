@@ -1,5 +1,5 @@
 
-import { User, ChatSession, Skill, Theme, ProjectTemplate, ClaudeSettings } from '../types';
+import { User, ChatSession, Skill, Theme, ProjectTemplate, ClaudeSettings, OllamaSettings, AISettings, AIProvider } from '../types';
 import { DEFAULT_TEST_CODE, DEFAULT_PROJECT_TEMPLATES } from '../constants';
 
 const STORAGE_KEYS = {
@@ -8,12 +8,19 @@ const STORAGE_KEYS = {
   SKILLS: 'vibecoder_skills',
   THEME: 'vibecoder_theme',
   TEMPLATES: 'vibecoder_templates',
-  CLAUDE_SETTINGS: 'vibecoder_claude_settings'
+  CLAUDE_SETTINGS: 'vibecoder_claude_settings',
+  OLLAMA_SETTINGS: 'vibecoder_ollama_settings',
+  AI_PROVIDER: 'vibecoder_ai_provider'
 };
 
 const DEFAULT_CLAUDE_SETTINGS: ClaudeSettings = {
   serverUrl: 'http://localhost:3456',
   model: 'sonnet'
+};
+
+const DEFAULT_OLLAMA_SETTINGS: OllamaSettings = {
+  serverUrl: 'http://localhost:11434',
+  model: 'llama3.2'
 };
 
 const DEFAULT_SKILLS: Skill[] = [
@@ -140,5 +147,48 @@ export const storage = {
 
   saveClaudeSettings: (settings: ClaudeSettings) => {
     localStorage.setItem(STORAGE_KEYS.CLAUDE_SETTINGS, JSON.stringify(settings));
+  },
+
+  getOllamaSettings: (): OllamaSettings => {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.OLLAMA_SETTINGS);
+      return data ? JSON.parse(data) : DEFAULT_OLLAMA_SETTINGS;
+    } catch (e) {
+      return DEFAULT_OLLAMA_SETTINGS;
+    }
+  },
+
+  saveOllamaSettings: (settings: OllamaSettings) => {
+    localStorage.setItem(STORAGE_KEYS.OLLAMA_SETTINGS, JSON.stringify(settings));
+  },
+
+  getAIProvider: (): AIProvider => {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.AI_PROVIDER);
+      if (data === 'claude' || data === 'ollama') {
+        return data;
+      }
+      return 'claude';
+    } catch (e) {
+      return 'claude';
+    }
+  },
+
+  saveAIProvider: (provider: AIProvider) => {
+    localStorage.setItem(STORAGE_KEYS.AI_PROVIDER, provider);
+  },
+
+  getAISettings: (): AISettings => {
+    return {
+      provider: storage.getAIProvider(),
+      claude: storage.getClaudeSettings(),
+      ollama: storage.getOllamaSettings()
+    };
+  },
+
+  saveAISettings: (settings: AISettings) => {
+    storage.saveAIProvider(settings.provider);
+    storage.saveClaudeSettings(settings.claude);
+    storage.saveOllamaSettings(settings.ollama);
   }
 };
