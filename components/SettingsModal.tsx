@@ -1,12 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
-import { StyleFramework, Theme, ClaudeSettings, OllamaSettings, AIProvider } from '../types';
+import { StyleFramework, Theme, ClaudeSettings, OllamaSettings, GroqSettings, AIProvider } from '../types';
 import { FRAMEWORKS } from '../constants';
 import { Button } from './Button';
-import { X, Layers, CheckCircle2, Moon, Sun, Loader2, AlertCircle, Check, ChevronDown, Sparkles, Zap, Server, RefreshCw } from 'lucide-react';
+import { X, Layers, CheckCircle2, Moon, Sun, Loader2, AlertCircle, Check, ChevronDown, Sparkles, Zap, Server, RefreshCw, Cloud } from 'lucide-react';
 import { clsx } from 'clsx';
 import { testClaudeConnection, CLAUDE_MODELS } from '../services/claudeCliService';
 import { testOllamaConnection, fetchOllamaModels } from '../services/ollamaService';
+import { testGroqConnection, GROQ_MODELS } from '../services/groqService';
 
 interface SettingsModalProps {
   currentFramework: StyleFramework;
@@ -17,6 +18,8 @@ interface SettingsModalProps {
   onClaudeSettingsChange: (settings: ClaudeSettings) => void;
   ollamaSettings: OllamaSettings;
   onOllamaSettingsChange: (settings: OllamaSettings) => void;
+  groqSettings: GroqSettings;
+  onGroqSettingsChange: (settings: GroqSettings) => void;
   aiProvider: AIProvider;
   onAIProviderChange: (provider: AIProvider) => void;
   isOpen: boolean;
@@ -32,6 +35,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClaudeSettingsChange,
   ollamaSettings,
   onOllamaSettingsChange,
+  groqSettings,
+  onGroqSettingsChange,
   aiProvider,
   onAIProviderChange,
   isOpen,
@@ -39,28 +44,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [localClaudeConfig, setLocalClaudeConfig] = useState<ClaudeSettings>(claudeSettings);
   const [localOllamaConfig, setLocalOllamaConfig] = useState<OllamaSettings>(ollamaSettings);
+  const [localGroqConfig, setLocalGroqConfig] = useState<GroqSettings>(groqSettings);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [isTestingOllamaConnection, setIsTestingOllamaConnection] = useState(false);
+  const [isTestingGroqConnection, setIsTestingGroqConnection] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<{ success?: boolean; error?: string } | null>(null);
   const [ollamaConnectionStatus, setOllamaConnectionStatus] = useState<{ success?: boolean; error?: string } | null>(null);
+  const [groqConnectionStatus, setGroqConnectionStatus] = useState<{ success?: boolean; error?: string } | null>(null);
   const [configSaved, setConfigSaved] = useState(false);
   const [ollamaConfigSaved, setOllamaConfigSaved] = useState(false);
+  const [groqConfigSaved, setGroqConfigSaved] = useState(false);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showOllamaModelDropdown, setShowOllamaModelDropdown] = useState(false);
+  const [showGroqModelDropdown, setShowGroqModelDropdown] = useState(false);
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [isLoadingOllamaModels, setIsLoadingOllamaModels] = useState(false);
 
   useEffect(() => {
     setLocalClaudeConfig(claudeSettings);
     setLocalOllamaConfig(ollamaSettings);
+    setLocalGroqConfig(groqSettings);
     setConfigSaved(false);
     setOllamaConfigSaved(false);
-  }, [claudeSettings, ollamaSettings]);
+    setGroqConfigSaved(false);
+  }, [claudeSettings, ollamaSettings, groqSettings]);
 
   useEffect(() => {
     if (isOpen) {
       setConfigSaved(false);
       setOllamaConfigSaved(false);
+      setGroqConfigSaved(false);
     }
   }, [isOpen]);
 
@@ -132,6 +145,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setOllamaConfigSaved(true);
 
     setTimeout(() => setOllamaConfigSaved(false), 2000);
+  };
+
+  const handleGroqApiKeyChange = (apiKey: string) => {
+    setLocalGroqConfig({ ...localGroqConfig, apiKey });
+    setGroqConnectionStatus(null);
+    setGroqConfigSaved(false);
+  };
+
+  const handleGroqModelChange = (model: string) => {
+    setLocalGroqConfig({ ...localGroqConfig, model });
+    setGroqConfigSaved(false);
+  };
+
+  const handleTestGroqConnection = async () => {
+    setIsTestingGroqConnection(true);
+    setGroqConnectionStatus(null);
+    setGroqConfigSaved(false);
+
+    const result = await testGroqConnection(localGroqConfig);
+    setGroqConnectionStatus(result);
+
+    setIsTestingGroqConnection(false);
+  };
+
+  const handleSaveGroqConfig = () => {
+    onGroqSettingsChange(localGroqConfig);
+    setGroqConfigSaved(true);
+
+    setTimeout(() => setGroqConfigSaved(false), 2000);
   };
 
   if (!isOpen) return null;
@@ -226,6 +268,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <Server size={24} />
                 <span className="font-medium text-sm">Ollama</span>
                 <span className="text-xs opacity-70">Local models</span>
+              </button>
+
+              <button
+                onClick={() => onAIProviderChange('groq')}
+                className={clsx(
+                  "flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all",
+                  aiProvider === 'groq'
+                    ? "bg-md-sys-color-secondary-container border-md-sys-color-secondary-container text-md-sys-color-on-secondary-container"
+                    : "bg-transparent border-md-sys-color-outline-variant hover:border-md-sys-color-outline text-md-sys-color-on-surface"
+                )}
+              >
+                <Cloud size={24} />
+                <span className="font-medium text-sm">Groq</span>
+                <span className="text-xs opacity-70">Fast inference</span>
               </button>
             </div>
           </div>
@@ -493,6 +549,128 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <span className="text-md-sys-color-primary">{ollamaSettings.model}</span>
                   <span className="mx-1">@</span>
                   <span className="opacity-70">{ollamaSettings.serverUrl}</span>
+                </div>
+              )}
+            </div>
+          </div>
+          )}
+
+          {/* Groq Configuration Section */}
+          {aiProvider === 'groq' && (
+          <div className="mb-8">
+            <h3 className="text-sm font-medium text-md-sys-color-primary mb-4">Groq Settings</h3>
+            <div className="p-4 rounded-2xl border border-md-sys-color-outline-variant bg-md-sys-color-surface-container-low space-y-4">
+              <div className="text-xs text-md-sys-color-on-surface-variant p-3 bg-md-sys-color-surface-container rounded-lg border border-md-sys-color-outline-variant">
+                <p className="font-medium mb-1">🚀 Ultra-fast inference with Groq</p>
+                <p>Get an API key at <code className="bg-md-sys-color-surface-container-high px-1 py-0.5 rounded">console.groq.com</code></p>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-md-sys-color-on-surface-variant mb-2 block">API Key</label>
+                <input
+                  type="password"
+                  value={localGroqConfig.apiKey}
+                  onChange={(e) => handleGroqApiKeyChange(e.target.value)}
+                  placeholder="gsk_..."
+                  className="w-full px-4 py-3 rounded-xl bg-md-sys-color-surface-container border border-md-sys-color-outline-variant text-md-sys-color-on-surface placeholder:text-md-sys-color-on-surface-variant/50 focus:outline-none focus:border-md-sys-color-primary"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-md-sys-color-on-surface-variant mb-2 block">Model</label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowGroqModelDropdown(!showGroqModelDropdown)}
+                    className="w-full px-4 py-3 rounded-xl bg-md-sys-color-surface-container border border-md-sys-color-outline-variant text-md-sys-color-on-surface focus:outline-none focus:border-md-sys-color-primary flex items-center justify-between"
+                  >
+                    <span>
+                      {GROQ_MODELS.find(m => m.value === localGroqConfig.model)?.name || localGroqConfig.model}
+                    </span>
+                    <ChevronDown size={16} className={clsx("transition-transform", showGroqModelDropdown && "rotate-180")} />
+                  </button>
+
+                  {showGroqModelDropdown && (
+                    <div className="absolute z-50 w-full mt-1 py-1 bg-md-sys-color-surface-container border border-md-sys-color-outline-variant rounded-xl shadow-lg max-h-64 overflow-y-auto">
+                      {GROQ_MODELS.map((model) => (
+                        <button
+                          key={model.value}
+                          type="button"
+                          onClick={() => {
+                            handleGroqModelChange(model.value);
+                            setShowGroqModelDropdown(false);
+                          }}
+                          className={clsx(
+                            "w-full px-4 py-2 text-left hover:bg-md-sys-color-surface-container-high transition-colors",
+                            localGroqConfig.model === model.value && "bg-md-sys-color-primary/10"
+                          )}
+                        >
+                          <div className="font-medium text-sm text-md-sys-color-on-surface">{model.name}</div>
+                          <div className="text-xs text-md-sys-color-on-surface-variant">{model.description}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={handleTestGroqConnection}
+                  disabled={isTestingGroqConnection}
+                  className="flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl bg-md-sys-color-surface-container-high border border-md-sys-color-outline-variant text-md-sys-color-on-surface hover:bg-md-sys-color-surface-container transition-all disabled:opacity-50"
+                >
+                  {isTestingGroqConnection ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Cloud size={16} />
+                  )}
+                  <span className="text-sm font-medium">Test Connection</span>
+                </button>
+                <button
+                  onClick={handleSaveGroqConfig}
+                  disabled={!localGroqConfig.apiKey || !localGroqConfig.model}
+                  className={clsx(
+                    "flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl transition-all",
+                    groqConfigSaved
+                      ? "bg-green-500 text-white"
+                      : "bg-md-sys-color-primary text-md-sys-color-on-primary hover:opacity-90",
+                    (!localGroqConfig.apiKey || !localGroqConfig.model) && "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  <Check size={16} />
+                  <span className="text-sm font-medium">{groqConfigSaved ? 'Saved!' : 'Save Config'}</span>
+                </button>
+              </div>
+
+              {groqConnectionStatus && (
+                <div className={clsx(
+                  "flex items-center gap-2 p-3 rounded-xl text-sm",
+                  groqConnectionStatus.success
+                    ? "bg-green-500/10 text-green-400"
+                    : "bg-red-500/10 text-red-400"
+                )}>
+                  {groqConnectionStatus.success ? (
+                    <>
+                      <CheckCircle2 size={16} />
+                      <span>Connected to Groq API!</span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle size={16} />
+                      <span>{groqConnectionStatus.error || 'Connection failed'}</span>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Current Config Display */}
+              {groqSettings.apiKey && (
+                <div className="text-xs text-md-sys-color-on-surface-variant p-2 bg-md-sys-color-surface-container rounded-lg">
+                  <span className="font-medium">Active: </span>
+                  <span className="text-md-sys-color-primary">{GROQ_MODELS.find(m => m.value === groqSettings.model)?.name || groqSettings.model}</span>
+                  <span className="mx-1">|</span>
+                  <span className="opacity-70">Key: •••{groqSettings.apiKey.slice(-4)}</span>
                 </div>
               )}
             </div>

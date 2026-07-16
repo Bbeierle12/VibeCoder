@@ -1,5 +1,5 @@
 
-import { User, ChatSession, Skill, Theme, ProjectTemplate, ClaudeSettings, OllamaSettings, AISettings, AIProvider } from '../types';
+import { User, ChatSession, Skill, Theme, ProjectTemplate, ClaudeSettings, OllamaSettings, GroqSettings, AISettings, AIProvider } from '../types';
 import { DEFAULT_TEST_CODE, DEFAULT_PROJECT_TEMPLATES } from '../constants';
 
 const STORAGE_KEYS = {
@@ -10,6 +10,7 @@ const STORAGE_KEYS = {
   TEMPLATES: 'vibecoder_templates',
   CLAUDE_SETTINGS: 'vibecoder_claude_settings',
   OLLAMA_SETTINGS: 'vibecoder_ollama_settings',
+  GROQ_SETTINGS: 'vibecoder_groq_settings',
   AI_PROVIDER: 'vibecoder_ai_provider'
 };
 
@@ -21,6 +22,11 @@ const DEFAULT_CLAUDE_SETTINGS: ClaudeSettings = {
 const DEFAULT_OLLAMA_SETTINGS: OllamaSettings = {
   serverUrl: 'http://localhost:11434',
   model: 'llama3.2'
+};
+
+const DEFAULT_GROQ_SETTINGS: GroqSettings = {
+  apiKey: '',
+  model: 'meta-llama/llama-4-scout-17b-16e-instruct'
 };
 
 const DEFAULT_SKILLS: Skill[] = [
@@ -162,10 +168,23 @@ export const storage = {
     localStorage.setItem(STORAGE_KEYS.OLLAMA_SETTINGS, JSON.stringify(settings));
   },
 
+  getGroqSettings: (): GroqSettings => {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.GROQ_SETTINGS);
+      return data ? JSON.parse(data) : DEFAULT_GROQ_SETTINGS;
+    } catch (e) {
+      return DEFAULT_GROQ_SETTINGS;
+    }
+  },
+
+  saveGroqSettings: (settings: GroqSettings) => {
+    localStorage.setItem(STORAGE_KEYS.GROQ_SETTINGS, JSON.stringify(settings));
+  },
+
   getAIProvider: (): AIProvider => {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.AI_PROVIDER);
-      if (data === 'claude' || data === 'ollama') {
+      if (data === 'claude' || data === 'ollama' || data === 'groq') {
         return data;
       }
       return 'claude';
@@ -182,7 +201,8 @@ export const storage = {
     return {
       provider: storage.getAIProvider(),
       claude: storage.getClaudeSettings(),
-      ollama: storage.getOllamaSettings()
+      ollama: storage.getOllamaSettings(),
+      groq: storage.getGroqSettings()
     };
   },
 
@@ -190,5 +210,6 @@ export const storage = {
     storage.saveAIProvider(settings.provider);
     storage.saveClaudeSettings(settings.claude);
     storage.saveOllamaSettings(settings.ollama);
+    storage.saveGroqSettings(settings.groq);
   }
 };

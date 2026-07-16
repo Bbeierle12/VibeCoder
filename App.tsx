@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Menu, Settings, BrainCircuit } from 'lucide-react';
-import { Message, Role, User, ChatSession, CodeVersion, StyleFramework, Skill, Theme, ProjectTemplate, ClaudeSettings, OllamaSettings, AIProvider } from './types';
+import { Message, Role, User, ChatSession, CodeVersion, StyleFramework, Skill, Theme, ProjectTemplate, ClaudeSettings, OllamaSettings, GroqSettings, AIProvider } from './types';
 import { CanvasItemData, ChatNodeData, CanvasConnection, Point } from './types/canvas';
 import { sendClaudeMessageStream, initializeClaudeChat } from './services/claudeCliService';
 import { sendOllamaMessageStream, initializeOllamaChat } from './services/ollamaService';
+import { sendGroqMessageStream, initializeGroqChat } from './services/groqService';
 import { storage } from './services/storage';
 import { extractHtmlCode, generateId, applyThemeToBody, cleanupDrafts } from './utils/helpers';
 import { InfiniteCanvas } from './components/InfiniteCanvas';
@@ -31,6 +32,7 @@ export default function App() {
   const [isThinking, setIsThinking] = useState(false);
   const [claudeSettings, setClaudeSettings] = useState<ClaudeSettings>(storage.getClaudeSettings());
   const [ollamaSettings, setOllamaSettings] = useState<OllamaSettings>(storage.getOllamaSettings());
+  const [groqSettings, setGroqSettings] = useState<GroqSettings>(storage.getGroqSettings());
   const [aiProvider, setAIProvider] = useState<AIProvider>(storage.getAIProvider());
   const [canvasItems, setCanvasItems] = useState<CanvasItemData[]>([]);
   const [chatNodes, setChatNodes] = useState<ChatNodeData[]>([]);
@@ -135,21 +137,26 @@ export default function App() {
     skillsContext: string,
     provider: AIProvider = aiProvider,
     claude: ClaudeSettings = claudeSettings,
-    ollama: OllamaSettings = ollamaSettings
+    ollama: OllamaSettings = ollamaSettings,
+    groq: GroqSettings = groqSettings
   ) => {
-    if (provider === 'ollama') {
+    if (provider === 'groq') {
+      initializeGroqChat(groq, framework, history, skillsContext);
+    } else if (provider === 'ollama') {
       initializeOllamaChat(ollama, framework, history, skillsContext);
     } else {
       initializeClaudeChat(claude, framework, history, skillsContext);
     }
-  }, [aiProvider, claudeSettings, ollamaSettings]);
+  }, [aiProvider, claudeSettings, ollamaSettings, groqSettings]);
 
   // Helper to send message based on active provider
   const sendMessageStream = useCallback(async (
     content: string,
     onChunk: (text: string) => void
   ): Promise<string> => {
-    if (aiProvider === 'ollama') {
+    if (aiProvider === 'groq') {
+      return sendGroqMessageStream(content, onChunk);
+    } else if (aiProvider === 'ollama') {
       return sendOllamaMessageStream(content, onChunk);
     } else {
       return sendClaudeMessageStream(content, onChunk);
@@ -221,6 +228,9 @@ export default function App() {
     const loadedOllamaSettings = storage.getOllamaSettings();
     setOllamaSettings(loadedOllamaSettings);
 
+    const loadedGroqSettings = storage.getGroqSettings();
+    setGroqSettings(loadedGroqSettings);
+
     const loadedAIProvider = storage.getAIProvider();
     setAIProvider(loadedAIProvider);
 
@@ -229,7 +239,14 @@ export default function App() {
 
     if (loadedSessions.length > 0) {
       setActiveSessionId(loadedSessions[0].id);
-      if (loadedAIProvider === 'ollama') {
+      if (loadedAIProvider === 'groq') {
+        initializeGroqChat(
+          loadedGroqSettings,
+          loadedSessions[0].framework,
+          loadedSessions[0].messages,
+          getEnabledSkillsContext(loadedSkills)
+        );
+      } else if (loadedAIProvider === 'ollama') {
         initializeOllamaChat(
           loadedOllamaSettings,
           loadedSessions[0].framework,
@@ -317,6 +334,14 @@ export default function App() {
     storage.saveOllamaSettings(newSettings);
     if (activeSession && aiProvider === 'ollama') {
       initializeChat(activeSession.framework, activeSession.messages, getEnabledSkillsContext(skills), 'ollama', claudeSettings, newSettings);
+    }
+  };
+
+  const handleGroqSettingsChange = (newSettings: GroqSettings) => {
+    setGroqSettings(newSettings);
+    storage.saveGroqSettings(newSettings);
+    if (activeSession && aiProvider === 'groq') {
+      initializeChat(activeSession.framework, activeSession.messages, getEnabledSkillsContext(skills), 'groq', claudeSettings, ollamaSettings, newSettings);
     }
   };
 
@@ -602,6 +627,8 @@ export default function App() {
         onClaudeSettingsChange={handleClaudeSettingsChange}
         ollamaSettings={ollamaSettings}
         onOllamaSettingsChange={handleOllamaSettingsChange}
+        groqSettings={groqSettings}
+        onGroqSettingsChange={handleGroqSettingsChange}
         aiProvider={aiProvider}
         onAIProviderChange={handleAIProviderChange}
       />
